@@ -1,8 +1,8 @@
+datatype ('a, 'e) result = OK of 'a | ERR of 'e
+
 signature RESULT =
 sig
   exception Result
-
-  datatype ('a, 'e) result = OK of 'a | ERR of 'e
 
   val isOk: ('a, 'e) result -> bool
   val isError: ('a, 'e) result -> bool
@@ -22,8 +22,6 @@ end
 structure Result: RESULT =
 struct
   exception Result
-
-  datatype ('a, 'e) result = OK of 'a | ERR of 'e
 
   fun isOk (OK _) = true
     | isOk _ = false
