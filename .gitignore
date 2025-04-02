@@ -1,2 +1,4 @@
 lib/
-bin/
+toml
+toml.dbg
+tester

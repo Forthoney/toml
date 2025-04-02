@@ -1,6 +1,6 @@
-RELEASE := bin/toml
-DBG := bin/toml.dbg
-TESTER := bin/testall
+RELEASE := toml
+DBG := toml.dbg
+TESTER := tester
 
 BUILD_FLAGS := 
 DBG_FLAGS := -const 'Exn.keepHistory true'
