@@ -1,24 +1,4 @@
-datatype value =
-  Str of string
-| Integer of int
-| Float of real
-| Boolean of bool
-| Array of value list
-
-type key = string list
-
-structure Value:
-sig
-  val toString: value -> string
-end =
-struct
-  fun toString (Str s) = "`" ^ s ^ "`"
-    | toString (Integer i) = Int.toString i
-    | toString (Float f) = Real.toString f
-    | toString (Boolean b) = Bool.toString b
-    | toString (Array a) =
-        "[" ^ (String.concatWith ", " (map toString a)) ^ "]"
-end
+type key = string nonempty_list
 
 structure Parser:
 sig
@@ -29,12 +9,14 @@ sig
   val key: substring -> key * substring
   val value: TextIO.instream -> substring -> value * substring
   val keyValuePair: TextIO.instream -> (key * value) option
+  val parse: TextIO.instream -> Document.table
 end =
 struct
   datatype string_fmt = BASIC | LITERAL | MULTI_BASIC | MULTI_LITERAL
 
   exception Unterminated of string_fmt
   exception InvalidEscape of string
+  exception DuplicateKey
 
   structure Opt = Option
 
@@ -130,7 +112,7 @@ struct
       maximalString (escapedString strm MULTI_BASIC "\"\"\"" s)
     end
 
-  val key =
+  fun key line =
     let
       fun bareKey s =
         let
@@ -147,24 +129,29 @@ struct
             (string pre, suf)
         end
 
+      fun getKey s =
+        case getc s of
+          SOME (#"'", inner) => literalString inner
+        | SOME (#"\"", inner) => basicString inner
+        | SOME _ => bareKey s
+        | NONE => raise Fail "Expected key but found nothing"
+
       fun loop acc s =
         let
-          val thisKey =
-            case getc s of
-              SOME (#"'", inner) => literalString inner
-            | SOME (#"\"", inner) => basicString inner
-            | SOME _ => bareKey s
-            | NONE => raise Fail "Expected key but found nothing"
-
-          fun dotted (key, remaining) =
-            case getc (dropl Char.isSpace remaining) of
-              SOME (#".", next) => loop (key :: acc) (dropl Char.isSpace next)
-            | _ => (key :: acc, remaining)
+          val s = dropl Char.isSpace s
         in
-          dotted thisKey
+          case getc s of
+            SOME (#".", rest) =>
+              let val (k, rest) = getKey (dropl Char.isSpace rest)
+              in loop (k :: acc) rest
+              end
+          | _ => (acc, s)
         end
+
+      val (initKey, rest) = getKey line
+      val (nestedKeys, rest) = loop [] rest
     in
-      (fn (acc, rest) => (rev acc, rest)) o loop []
+      ((initKey, rev nestedKeys), rest)
     end
 
   fun value strm line =
@@ -251,17 +238,29 @@ struct
 
   fun keyValuePair strm =
     Opt.composePartial
-      ( fn line =>
-          if isEmpty line orelse isPrefix "#" line then
-            keyValuePair strm
-          else
-            let
-              val (k, line) = key line
-              val (v, rest) = value strm (equals line)
-            in
-              if isEmpty (dropl Char.isSpace rest) then SOME (k, v)
-              else raise Fail ("Stuff left in " ^ (string rest))
-            end
-      , Opt.compose (dropl Char.isSpace o full, TextIO.inputLine)
+      ( (fn line =>
+           if isEmpty line orelse isPrefix "#" line then
+             keyValuePair strm
+           else
+             let
+               val (k, line) = key line
+               val (v, rest) = value strm (equals line)
+             in
+               if isEmpty (dropl Char.isSpace rest) then SOME (k, v)
+               else raise Fail ("Stuff left in " ^ (string rest))
+             end) o dropl Char.isSpace o full
+      , TextIO.inputLine
       ) strm
+
+  fun parse strm =
+    let
+      fun loop doc =
+        case keyValuePair strm of
+          SOME kv =>
+            ((loop o Option.valOf o Document.insert kv) doc
+             handle Option => raise DuplicateKey)
+        | NONE => doc
+    in
+      loop Document.new
+    end
 end
