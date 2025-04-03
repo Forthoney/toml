@@ -1,9 +1,12 @@
 type key = (string * string list)
 structure Parser:
 sig
-  datatype string_fmt = BASIC | LITERAL | MULTI_BASIC | MULTI_LITERAL
+  datatype elem = KVPair | Header | TableArray
 
-  exception Unterminated of string_fmt
+  exception Unterminated of string
+  exception InvalidEscape of string
+  exception DuplicateKey
+  exception Remaining of {ty: elem, remaining: string}
 
   val key: substring -> key * substring
   val value: TextIO.instream -> substring -> value * substring
@@ -11,11 +14,12 @@ sig
   val parse: TextIO.instream -> Document.table
 end =
 struct
-  datatype string_fmt = BASIC | LITERAL | MULTI_BASIC | MULTI_LITERAL
+  datatype elem = KVPair | Header | TableArray
 
-  exception Unterminated of string_fmt
+  exception Unterminated of string
   exception InvalidEscape of string
   exception DuplicateKey
+  exception Remaining of {ty: elem, remaining: string}
 
   structure Opt = Option
 
@@ -32,7 +36,7 @@ struct
     in
       case getc suf of
         SOME (#"'", rest) => (string pre, rest)
-      | _ => raise Unterminated LITERAL
+      | _ => raise Unterminated "'"
     end
 
   fun multilineLiteralString strm s =
@@ -49,7 +53,7 @@ struct
             if isEmpty suf then
               case TextIO.inputLine strm of
                 SOME s => (loop o position "'''" o full) s
-              | NONE => raise Unterminated MULTI_LITERAL
+              | NONE => raise Unterminated "'''"
             else
               (string (span (pre, pre')), suf)
         in
@@ -62,32 +66,31 @@ struct
       else raise Fail "Unreachable"
     end
 
-  fun escapedString strm fmt terminator s =
+  fun escapedString strm terminator s =
     let
       val (termStart, termRest) = (Opt.valOf o getc o full) terminator
       val termRest = string termRest
-      fun isEscape c =
-        List.exists (fn c' => c' = c) [#"b", #"t", #"n", #"\"", #"\\"]
       fun loop (acc, s) =
         let
           val (pre, suf) = splitl (fn c => c <> termStart andalso c <> #"\\") s
           val pre = string pre
+          fun escape s =
+            case getc s of
+              SOME (#"n", rest) => loop (pre ^ "\n", rest)
+            | SOME (#"b", rest) => loop (pre ^ "\b", rest)
+            | SOME (#"t", rest) => loop (pre ^ "\t", rest)
+            | SOME (#"\"", rest) => loop (pre ^ "\"", rest)
+            | SOME (#"\\", rest) => loop (pre ^ "\\", rest)
+            | SOME (c, rest) =>
+                raise InvalidEscape (String.str #"\\" ^ String.str c)
+            | NONE => raise InvalidEscape (String.str #"\\")
         in
           case getc suf of
             NONE =>
               (case TextIO.inputLine strm of
                  SOME l => loop (acc ^ pre, full l)
-               | NONE => raise Unterminated fmt)
-          | SOME (#"\\", sufEscaped) =>
-              (case getc sufEscaped of
-                 SOME (#"n", rest) => loop (pre ^ "\n", rest)
-               | SOME (#"b", rest) => loop (pre ^ "\b", rest)
-               | SOME (#"t", rest) => loop (pre ^ "\t", rest)
-               | SOME (#"\"", rest) => loop (pre ^ "\"", rest)
-               | SOME (#"\\", rest) => loop (pre ^ "\\", rest)
-               | SOME (c, rest) =>
-                   raise InvalidEscape (String.str #"\\" ^ String.str c)
-               | NONE => raise InvalidEscape (String.str #"\\"))
+               | NONE => raise Unterminated terminator)
+          | SOME (#"\\", sufEscaped) => escape sufEscaped
           | SOME (_, sufEscaped) =>
               if isPrefix termRest sufEscaped then
                 (acc ^ pre, triml (String.size termRest) sufEscaped)
@@ -99,7 +102,7 @@ struct
       loop ("", s)
     end
 
-  val basicString = escapedString (TextIO.openString "") BASIC "\""
+  val basicString = escapedString (TextIO.openString "") "\""
 
   fun multilineBasicString strm s =
     let
@@ -112,7 +115,7 @@ struct
         else if isPrefix "\"\"" suf then (pre ^ "\"\"", triml 2 suf)
         else (pre, suf)
     in
-      maximalString (escapedString strm MULTI_BASIC "\"\"\"" s)
+      maximalString (escapedString strm "\"\"\"" s)
     end
 
   fun key line =
@@ -245,44 +248,49 @@ struct
       val (v, rest) = value strm (equals line)
     in
       if isEmpty (dropl Char.isSpace rest) then (k, v)
-      else raise Fail ("Stuff left in " ^ (string rest))
+      else raise Remaining {ty = KVPair, remaining = string rest}
     end
 
-  fun header context table strm =
+  fun header terminator line =
     let
-      fun helper line =
-        case getc (dropl Char.isSpace line) of
-          SOME (#"#", _) | NONE => header context table
-        | SOME (#"[", line) =>
-            let
-              val ((k, ks), line) = key line
-            in
-              case getc line of
-                SOME (#"]", rest) =>
-                  if isEmpty (dropl Char.isSpace rest) then
-                    header (k :: ks) table
-                  else
-                    raise Fail
-                      ("Header should not be followed by non-whitespace characters, but found "
-                       ^ (string rest))
-              | _ => raise Fail "Unterminated header"
-            end
-        | _ =>
-            let
-              val ((k, ks), v) = keyValuePair strm line
-              val k =
-                case context of
-                  [] => (k, ks)
-                | k' :: ks' => (k', ks' @ (k :: ks))
-              val updated = Option.valOf (Document.insert (k, v) table)
-                            handle Option => raise DuplicateKey
-            in
-              header context updated
-            end
+      val ((k, ks), line) = key line
     in
-      Option.getOpt
-        (Option.compose (header o full, TextIO.inputLine) strm, table)
+      if isSuffix terminator (dropr Char.isSpace line) then k :: ks
+      else (print (string line); raise Unterminated terminator)
     end
 
-  val parse = header [] Document.new
+  (* when I see header, upload doc to main and set context *)
+  (* parse key values and add to MY current doc *)
+
+
+  fun isBlank line =
+    case first (dropl Char.isSpace line) of
+      SOME #"#" | NONE => true
+    | SOME _ => false
+
+  fun parse strm =
+    let
+      fun insert tbl kv =
+        Option.valOf (Document.insert kv tbl)
+        handle Option => raise DuplicateKey
+
+      fun flush dest [] buffer = Document.append (dest, buffer)
+        | flush dest (k :: ks) buffer =
+            insert dest ((k, ks), Table (Document.toList buffer))
+
+      fun loop (topLevel: Document.table) context (doc: Document.table) =
+        case Option.compose (full, TextIO.inputLine) strm of
+          SOME line =>
+            (case getc (dropl Char.isSpace line) of
+               SOME (#"#", _) | NONE => loop topLevel context doc
+             | SOME (#"[", line) =>
+                 let val topLevel = flush topLevel context doc
+                 in loop topLevel (header "]" line) Document.new
+                 end
+             | _ =>
+                 (loop topLevel context o insert doc o keyValuePair strm) line)
+        | NONE => flush topLevel context doc
+    in
+      loop Document.new [] Document.new
+    end
 end

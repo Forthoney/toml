@@ -9,7 +9,7 @@ datatype value =
 structure Value =
 struct
   fun toString (Str s) =
-        "`" ^ (String.toString s) ^ "`"
+        "\"" ^ (String.toString s) ^ "\""
     | toString (Integer i) = Int.toString i
     | toString (Float f) = Real.toString f
     | toString (Boolean b) = Bool.toString b
@@ -29,10 +29,13 @@ sig
   type table
 
   val new: table
+  val fromList: (k * v) list -> table
+  val toList: table -> (k * v) list
+  val append: (table * table) -> table
   val insert: ((k * k list) * v) -> table -> table option
 end
 
-structure Document: DOCUMENT =
+structure Document:> DOCUMENT where type k = string where type v = value =
 struct
   type k = string
   type v = value
@@ -40,6 +43,12 @@ struct
 
   val new = []
 
+  fun fromList l = l
+  fun toList t = t
+
+  fun append (d1, d2) =
+    d1 @ d2
+  
   fun insert ((k, []), v) tbl =
         Option.compose
           ( fn tbl => (k, v) :: tbl
