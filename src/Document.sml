@@ -6,12 +6,10 @@ datatype value =
 | Array of value list
 | Table of (string * value) list
 
-structure Value:
-sig
-  val toString: value -> string
-end =
+structure Value =
 struct
-  fun toString (Str s) = "`" ^ s ^ "`"
+  fun toString (Str s) =
+        "`" ^ (String.toString s) ^ "`"
     | toString (Integer i) = Int.toString i
     | toString (Float f) = Real.toString f
     | toString (Boolean b) = Bool.toString b
@@ -24,8 +22,6 @@ struct
            (map (fn (k, v) => k ^ ":" ^ (toString v)) entries)) ^ "}"
 end
 
-type 'a nonempty_list = ('a * 'a list)
-
 signature DOCUMENT =
 sig
   eqtype k
@@ -33,14 +29,14 @@ sig
   type table
 
   val new: table
-  val insert: (k nonempty_list * v) -> table -> table option
+  val insert: ((k * k list) * v) -> table -> table option
 end
 
 structure Document: DOCUMENT =
 struct
   type k = string
   type v = value
-  type table = (k * v) list
+  type table = (string * value) list
 
   val new = []
 
@@ -63,5 +59,7 @@ struct
           | _ => NONE
         else
           Option.compose
-            (fn recResult => (k', v') :: recResult, insert ((k, kNext :: ks), v)) rest
+            ( fn recResult => (k', v') :: recResult
+            , insert ((k, kNext :: ks), v)
+            ) rest
 end

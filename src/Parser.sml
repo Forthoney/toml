@@ -1,5 +1,4 @@
-type key = string nonempty_list
-
+type key = (string * string list)
 structure Parser:
 sig
   datatype string_fmt = BASIC | LITERAL | MULTI_BASIC | MULTI_LITERAL
@@ -8,7 +7,7 @@ sig
 
   val key: substring -> key * substring
   val value: TextIO.instream -> substring -> value * substring
-  val keyValuePair: TextIO.instream -> (key * value) option
+  val keyValuePair: TextIO.instream -> substring -> (key * value)
   val parse: TextIO.instream -> Document.table
 end =
 struct
@@ -81,9 +80,13 @@ struct
                | NONE => raise Unterminated fmt)
           | SOME (#"\\", sufEscaped) =>
               (case getc sufEscaped of
-                 SOME (c, rest) =>
-                   if isEscape c then loop (pre ^ (String.str c), rest)
-                   else raise InvalidEscape (String.str #"\\" ^ String.str c)
+                 SOME (#"n", rest) => loop (pre ^ "\n", rest)
+               | SOME (#"b", rest) => loop (pre ^ "\b", rest)
+               | SOME (#"t", rest) => loop (pre ^ "\t", rest)
+               | SOME (#"\"", rest) => loop (pre ^ "\"", rest)
+               | SOME (#"\\", rest) => loop (pre ^ "\\", rest)
+               | SOME (c, rest) =>
+                   raise InvalidEscape (String.str #"\\" ^ String.str c)
                | NONE => raise InvalidEscape (String.str #"\\"))
           | SOME (_, sufEscaped) =>
               if isPrefix termRest sufEscaped then
@@ -236,31 +239,50 @@ struct
       SOME (#"=", rest) => dropl Char.isSpace rest
     | _ => raise Fail "Expected to find '=' after key"
 
-  fun keyValuePair strm =
-    Opt.composePartial
-      ( (fn line =>
-           if isEmpty line orelse isPrefix "#" line then
-             keyValuePair strm
-           else
-             let
-               val (k, line) = key line
-               val (v, rest) = value strm (equals line)
-             in
-               if isEmpty (dropl Char.isSpace rest) then SOME (k, v)
-               else raise Fail ("Stuff left in " ^ (string rest))
-             end) o dropl Char.isSpace o full
-      , TextIO.inputLine
-      ) strm
-
-  fun parse strm =
+  fun keyValuePair strm line =
     let
-      fun loop doc =
-        case keyValuePair strm of
-          SOME kv =>
-            ((loop o Option.valOf o Document.insert kv) doc
-             handle Option => raise DuplicateKey)
-        | NONE => doc
+      val (k, line) = key line
+      val (v, rest) = value strm (equals line)
     in
-      loop Document.new
+      if isEmpty (dropl Char.isSpace rest) then (k, v)
+      else raise Fail ("Stuff left in " ^ (string rest))
     end
+
+  fun header context table strm =
+    let
+      fun helper line =
+        case getc (dropl Char.isSpace line) of
+          SOME (#"#", _) | NONE => header context table
+        | SOME (#"[", line) =>
+            let
+              val ((k, ks), line) = key line
+            in
+              case getc line of
+                SOME (#"]", rest) =>
+                  if isEmpty (dropl Char.isSpace rest) then
+                    header (k :: ks) table
+                  else
+                    raise Fail
+                      ("Header should not be followed by non-whitespace characters, but found "
+                       ^ (string rest))
+              | _ => raise Fail "Unterminated header"
+            end
+        | _ =>
+            let
+              val ((k, ks), v) = keyValuePair strm line
+              val k =
+                case context of
+                  [] => (k, ks)
+                | k' :: ks' => (k', ks' @ (k :: ks))
+              val updated = Option.valOf (Document.insert (k, v) table)
+                            handle Option => raise DuplicateKey
+            in
+              header context updated
+            end
+    in
+      Option.getOpt
+        (Option.compose (header o full, TextIO.inputLine) strm, table)
+    end
+
+  val parse = header [] Document.new
 end

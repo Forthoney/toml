@@ -4,6 +4,5 @@ val strm =
   | [file] => TextIO.openIn file
   | _ => raise Fail "Invalid options"
 
-val doc = Table (Parser.parse strm)
-
-val _ = print (Value.toString doc)
+val doc = Parser.parse strm
+val _ = print (Value.toString (Table doc) ^ "\n")

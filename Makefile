@@ -1,8 +1,9 @@
-RELEASE := toml
-DBG := toml.dbg
-TESTER := tester
+BUILD := bin
+RELEASE := $(BUILD)/toml
+DBG := $(BUILD)/toml.dbg
+TESTER := $(BUILD)/tester
 
-BUILD_FLAGS := 
+COMMON_FLAGS := -default-ann 'allowOrPats true'
 DBG_FLAGS := -const 'Exn.keepHistory true'
 
 SOURCE := src/*.sml src/*.mlb
@@ -13,19 +14,19 @@ all: $(RELEASE) $(DBG) $(TESTER)
 .PHONY: test
 
 $(RELEASE): $(SOURCE)
-	mlton $(BUILD_FLAGS) -output $@ src/toml.mlb
+	mlton $(COMMON_FLAGS) -output $@ src/toml.mlb
 
 $(DBG): $(SOURCE)
-	mlton $(BUILD_FLAGS) $(DBG_FLAGS) -output $@ src/toml.mlb
+	mlton $(COMMON_FLAGS) $(DBG_FLAGS) -output $@ src/toml.mlb
 
 $(TESTER): $(SOURCE) $(TESTS)
-	mlton $(MLTON_FLAGS) $(DBG_FLAGS) -output $@ tests/toml.test.mlb
+	mlton $(COMMON_FLAGS) $(DBG_FLAGS) -output $@ tests/toml.test.mlb
 
 test: $(TESTER)
 	$(TESTER)
 
 clean:
-	rm -f $(BIN)/*
+	rm -f $(BUILD)/*
 
 deps:
 	jinmori add -r requirements.txt
