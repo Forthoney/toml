@@ -31,8 +31,9 @@ sig
   val new: doc
   val fromList: (k * v) list -> doc
   val toList: doc -> (k * v) list
-  val append: (doc * doc) -> doc
+  val concat: (doc * doc) -> doc
   val insert: ((k * k list) * v) -> doc -> doc option
+  val pushAt: ((k * k list) * v) -> doc -> doc option
 end
 
 structure Document :> DOCUMENT where type k = string where type v = value =
@@ -46,28 +47,46 @@ struct
   fun fromList l = l
   fun toList t = t
 
-  fun append (d1, d2) = d1 @ d2
+  fun concat (d1, d2) = d1 @ d2
 
-  fun insert ((k, []), v) tbl =
+  fun traverse baseCase ((k, []), v) tbl =
+        baseCase (k, v) tbl
+    | traverse bc ((k, kNext :: ks), v) [] =
         Option.compose
-          ( fn tbl => (k, v) :: tbl
-          , Option.filter (List.all (fn (k', _) => k' <> k))
-          ) tbl
-    | insert ((k, kNext :: ks), v) [] =
-        Option.compose
-          (fn updated => [(k, Table updated)], insert ((kNext, ks), v)) []
-    | insert ((k, kNext :: ks), v) ((k', v') :: rest) =
+          (fn updated => [(k, Table updated)], traverse bc ((kNext, ks), v)) []
+    | traverse bc ((k, kNext :: ks), v) ((k', v') :: rest) =
         if k' = k then
           case v' of
             Table inner =>
               Option.compose
                 ( fn updated => (k, Table updated) :: rest
-                , insert ((kNext, ks), v)
+                , traverse bc ((kNext, ks), v)
                 ) inner
           | _ => NONE
         else
           Option.compose
             ( fn recResult => (k', v') :: recResult
-            , insert ((k, kNext :: ks), v)
+            , traverse bc ((k, kNext :: ks), v)
             ) rest
+
+  val insert = traverse (fn (k, v) =>
+    Option.compose
+      ( fn tbl => (k, v) :: tbl
+      , Option.filter (List.all (fn (k', _) => k' <> k))
+      ))
+
+  val pushAt =
+    let
+      fun helper acc (k, v) [] =
+            SOME (rev ((k, Array [v]) :: acc))
+        | helper acc (k, v) ((k', v') :: rest) =
+            case (k' = k, v') of
+              (false, _) =>
+                traverse (helper ((k', v') :: acc)) ((k, []), v) rest
+            | (_, Array vs) =>
+                SOME (List.revAppend (acc, (k', Array (v :: vs)) :: rest))
+            | _ => NONE
+    in
+      traverse (helper [])
+    end
 end

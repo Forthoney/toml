@@ -260,41 +260,55 @@ struct
     let
       val ((k, ks), line) = key line
     in
-      if isPrefix terminator line andalso isBlank (triml (length terminator) line) then
-        k :: ks
+      if
+        isPrefix terminator line
+        andalso isBlank (triml (String.size terminator) line)
+      then (k, ks)
       else raise Unterminated terminator
     end
 
   fun parse strm =
     let
-      fun insert tbl kv =
-        Opt.valOf (Document.insert kv tbl)
-        handle Option => raise DuplicateKey
+      datatype context =
+        Insert of string list
+      | Append of (string * string list)
 
-      fun flush dest [] buffer = Document.append (dest, buffer)
-        | flush dest (k :: ks) buffer =
-            insert dest ((k, ks), Table (Document.toList buffer))
+      fun flush dest (Insert []) buffer = Document.concat (dest, buffer)
+        | flush dest (Insert (k :: ks)) buffer =
+            (Opt.valOf
+               (Document.insert ((k, ks), Table (Document.toList buffer)) dest)
+             handle Option => raise DuplicateKey)
+        | flush dest (Append (k, ks)) buffer =
+            (Opt.valOf
+               (Document.pushAt ((k, ks), Table (Document.toList buffer)) dest)
+             handle Option => raise DuplicateKey)
 
       fun loop topLevel context doc =
         let
+          fun insert kv =
+            Opt.valOf (Document.insert kv doc)
+            handle Option => raise DuplicateKey
+
           fun helper line =
             case getc (dropl Char.isSpace line) of
               SOME (#"#", _) | NONE => loop topLevel context doc
             | SOME (#"[", line) =>
-              let val topLevel = flush topLevel context doc
-              in
-                case getc line of
-                  SOME (#"[", line) =>
-                  header "]]" line
-                | _ => loop topLevel (header "]" line) Document.new
-              end
-            | _ => (loop topLevel context o insert doc o keyValuePair strm) line
+                let
+                  val topLevel = flush topLevel context doc
+                  val context =
+                    case getc line of
+                      SOME (#"[", line) => Append (header "]]" line)
+                    | _ => (Insert o op:: o header "]") line
+                in
+                  loop topLevel context Document.new
+                end
+            | _ => (loop topLevel context o insert o keyValuePair strm) line
         in
           case Opt.compose (full, TextIO.inputLine) strm of
             SOME line => helper line
           | NONE => flush topLevel context doc
         end
     in
-      loop Document.new [] Document.new
+      loop Document.new (Insert []) Document.new
     end
 end
