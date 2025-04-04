@@ -26,29 +26,28 @@ signature DOCUMENT =
 sig
   eqtype k
   type v
-  type table
+  type doc
 
-  val new: table
-  val fromList: (k * v) list -> table
-  val toList: table -> (k * v) list
-  val append: (table * table) -> table
-  val insert: ((k * k list) * v) -> table -> table option
+  val new: doc
+  val fromList: (k * v) list -> doc
+  val toList: doc -> (k * v) list
+  val append: (doc * doc) -> doc
+  val insert: ((k * k list) * v) -> doc -> doc option
 end
 
-structure Document:> DOCUMENT where type k = string where type v = value =
+structure Document :> DOCUMENT where type k = string where type v = value =
 struct
   type k = string
   type v = value
-  type table = (string * value) list
+  type doc = (k * v) list
 
   val new = []
 
   fun fromList l = l
   fun toList t = t
 
-  fun append (d1, d2) =
-    d1 @ d2
-  
+  fun append (d1, d2) = d1 @ d2
+
   fun insert ((k, []), v) tbl =
         Option.compose
           ( fn tbl => (k, v) :: tbl

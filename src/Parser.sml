@@ -11,7 +11,7 @@ sig
   val key: substring -> key * substring
   val value: TextIO.instream -> substring -> value * substring
   val keyValuePair: TextIO.instream -> substring -> (key * value)
-  val parse: TextIO.instream -> Document.table
+  val parse: TextIO.instream -> Document.doc
 end =
 struct
   datatype elem = KVPair | Header | TableArray
@@ -29,6 +29,11 @@ struct
 
   fun last s =
     Opt.compose (fn s => sub (s, size s - 1), Opt.filter (not o isEmpty)) s
+
+  fun isBlank line =
+    case first (dropl Char.isSpace line) of
+      SOME #"#" | NONE => true
+    | SOME _ => false
 
   fun literalString s =
     let
@@ -247,7 +252,7 @@ struct
       val (k, line) = key line
       val (v, rest) = value strm (equals line)
     in
-      if isEmpty (dropl Char.isSpace rest) then (k, v)
+      if isBlank rest then (k, v)
       else raise Remaining {ty = KVPair, remaining = string rest}
     end
 
@@ -255,41 +260,40 @@ struct
     let
       val ((k, ks), line) = key line
     in
-      if isSuffix terminator (dropr Char.isSpace line) then k :: ks
-      else (print (string line); raise Unterminated terminator)
+      if isPrefix terminator line andalso isBlank (triml (length terminator) line) then
+        k :: ks
+      else raise Unterminated terminator
     end
-
-  (* when I see header, upload doc to main and set context *)
-  (* parse key values and add to MY current doc *)
-
-
-  fun isBlank line =
-    case first (dropl Char.isSpace line) of
-      SOME #"#" | NONE => true
-    | SOME _ => false
 
   fun parse strm =
     let
       fun insert tbl kv =
-        Option.valOf (Document.insert kv tbl)
+        Opt.valOf (Document.insert kv tbl)
         handle Option => raise DuplicateKey
 
       fun flush dest [] buffer = Document.append (dest, buffer)
         | flush dest (k :: ks) buffer =
             insert dest ((k, ks), Table (Document.toList buffer))
 
-      fun loop (topLevel: Document.table) context (doc: Document.table) =
-        case Option.compose (full, TextIO.inputLine) strm of
-          SOME line =>
-            (case getc (dropl Char.isSpace line) of
-               SOME (#"#", _) | NONE => loop topLevel context doc
-             | SOME (#"[", line) =>
-                 let val topLevel = flush topLevel context doc
-                 in loop topLevel (header "]" line) Document.new
-                 end
-             | _ =>
-                 (loop topLevel context o insert doc o keyValuePair strm) line)
-        | NONE => flush topLevel context doc
+      fun loop topLevel context doc =
+        let
+          fun helper line =
+            case getc (dropl Char.isSpace line) of
+              SOME (#"#", _) | NONE => loop topLevel context doc
+            | SOME (#"[", line) =>
+              let val topLevel = flush topLevel context doc
+              in
+                case getc line of
+                  SOME (#"[", line) =>
+                  header "]]" line
+                | _ => loop topLevel (header "]" line) Document.new
+              end
+            | _ => (loop topLevel context o insert doc o keyValuePair strm) line
+        in
+          case Opt.compose (full, TextIO.inputLine) strm of
+            SOME line => helper line
+          | NONE => flush topLevel context doc
+        end
     in
       loop Document.new [] Document.new
     end
