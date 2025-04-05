@@ -95,10 +95,10 @@ struct
               (case TextIO.inputLine strm of
                  SOME l => loop (acc ^ pre, full l)
                | NONE => raise Unterminated terminator)
-          | SOME (#"\\", sufEscaped) => escape sufEscaped
-          | SOME (_, sufEscaped) =>
-              if isPrefix termRest sufEscaped then
-                (acc ^ pre, triml (String.size termRest) sufEscaped)
+          | SOME (#"\\", suf) => escape suf
+          | SOME (_, suf) =>
+              if isPrefix termRest suf then
+                (acc ^ pre, triml (String.size termRest) suf)
               else
                 (* false flag! continue on *)
                 loop (pre, suf)
@@ -212,7 +212,7 @@ struct
 
       fun skipUnderscore s =
         case getc s of
-          SOME (#"_", s) => skipUnderscore s
+          SOME (#"_", s) => getc s
         | default => default
 
       val integer =
