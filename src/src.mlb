@@ -1,4 +1,6 @@
 $(SML_LIB)/basis/basis.mlb
 
+DateTime.sml
 Document.sml
+Printer.sml
 Parser.sml

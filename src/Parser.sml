@@ -212,7 +212,7 @@ struct
 
       fun skipUnderscore s =
         case getc s of
-          SOME (#"_", strm) => skipUnderscore s
+          SOME (#"_", s) => skipUnderscore s
         | default => default
 
       val integer =
@@ -231,13 +231,28 @@ struct
 
       val bool = Opt.compose (fn (v, rest) => (Boolean v, rest), Bool.scan getc)
 
+      fun date s =
+        case Rfc3339.Date.scan s of
+          SOME (date, s) =>
+            (case Rfc3339.TimeOfDay.scan s of
+               SOME (tod, s) =>
+                 (case Rfc3339.Offset.scan s of
+                    SOME (offset, s) =>
+                      SOME (OffsetDateTime (date, tod, offset), s)
+                  | NONE => SOME (LocalDateTime (date, tod), s))
+             | NONE => SOME (LocalDate date, s))
+        | NONE =>
+            (case Rfc3339.TimeOfDay.scan s of
+               SOME (tod, s) => SOME (LocalTime tod, s)
+             | NONE => NONE)
+
       fun tryMap [] v = NONE
         | tryMap (f :: fs) v =
             case f v of
               SOME v => SOME v
             | NONE => tryMap fs v
     in
-      case tryMap [array, str, bool, float, integer] line of
+      case tryMap [array, str, bool, date, float, integer] line of
         SOME v => v
       | NONE => raise Fail "Unknown value type"
     end
@@ -304,7 +319,7 @@ struct
                 end
             | _ => (loop topLevel context o insert o keyValuePair strm) line
         in
-          case Opt.compose (full, TextIO.inputLine) strm of
+          case Opt.compose (dropl Char.isSpace o full, TextIO.inputLine) strm of
             SOME line => helper line
           | NONE => flush topLevel context doc
         end

@@ -3,24 +3,12 @@ datatype value =
 | Integer of int
 | Float of real
 | Boolean of bool
+| OffsetDateTime of (Rfc3339.date * Rfc3339.time_of_day * Rfc3339.offset)
+| LocalDateTime of (Rfc3339.date * Rfc3339.time_of_day)
+| LocalDate of Rfc3339.date
+| LocalTime of Rfc3339.time_of_day
 | Array of value list
 | Table of (string * value) list
-
-structure Value =
-struct
-  fun toString (Str s) =
-        "\"" ^ (String.toString s) ^ "\""
-    | toString (Integer i) = Int.toString i
-    | toString (Float f) = Real.toString f
-    | toString (Boolean b) = Bool.toString b
-    | toString (Array a) =
-        "[" ^ (String.concatWith ", " (map toString a)) ^ "]"
-    | toString (Table entries) =
-        "{"
-        ^
-        (String.concatWith ", "
-           (map (fn (k, v) => k ^ ":" ^ (toString v)) entries)) ^ "}"
-end
 
 signature DOCUMENT =
 sig
@@ -49,25 +37,27 @@ struct
 
   fun concat (d1, d2) = d1 @ d2
 
-  fun traverse baseCase ((k, []), v) tbl =
-        baseCase (k, v) tbl
-    | traverse bc ((k, kNext :: ks), v) [] =
+  fun traverse baseCase =
+    fn ((k, []), v) => baseCase (k, v)
+     | ((k, kNext :: ks), v) =>
+      fn [] =>
         Option.compose
-          (fn updated => [(k, Table updated)], traverse bc ((kNext, ks), v)) []
-    | traverse bc ((k, kNext :: ks), v) ((k', v') :: rest) =
-        if k' = k then
-          case v' of
-            Table inner =>
-              Option.compose
-                ( fn updated => (k, Table updated) :: rest
-                , traverse bc ((kNext, ks), v)
-                ) inner
-          | _ => NONE
-        else
-          Option.compose
-            ( fn recResult => (k', v') :: recResult
-            , traverse bc ((k, kNext :: ks), v)
-            ) rest
+          ( fn updated => [(k, Table updated)]
+          , traverse baseCase ((kNext, ks), v)
+          ) []
+       | (k', v') :: rest =>
+        case (k' = k, v') of
+          (false, _) =>
+            Option.compose
+              ( fn recResult => (k', v') :: recResult
+              , traverse baseCase ((k, kNext :: ks), v)
+              ) rest
+        | (_, Table inner) =>
+            Option.compose
+              ( fn updated => (k, Table updated) :: rest
+              , traverse baseCase ((kNext, ks), v)
+              ) inner
+        | _ => NONE
 
   val insert = traverse (fn (k, v) =>
     Option.compose
@@ -77,16 +67,15 @@ struct
 
   val pushAt =
     let
-      fun helper acc (k, v) [] =
-            SOME (rev ((k, Array [v]) :: acc))
-        | helper acc (k, v) ((k', v') :: rest) =
-            case (k' = k, v') of
-              (false, _) =>
-                traverse (helper ((k', v') :: acc)) ((k, []), v) rest
-            | (_, Array vs) =>
-                SOME (List.revAppend (acc, (k', Array (v :: vs)) :: rest))
-            | _ => NONE
+      fun loop acc (k, v) =
+        fn [] => SOME (rev ((k, Array [v]) :: acc))
+         | (k', v') :: rest =>
+          case (k' = k, v') of
+            (false, _) => traverse (loop ((k', v') :: acc)) ((k, []), v) rest
+          | (_, Array vs) =>
+              SOME (List.revAppend (acc, (k', Array (v :: vs)) :: rest))
+          | _ => NONE
     in
-      traverse (helper [])
+      traverse (loop [])
     end
 end

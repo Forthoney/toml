@@ -1,8 +1,10 @@
+fun flagparse ("--human"::args) = (Printer.Debug.toString, args)
+  | flagparse args = (Printer.Default.toString, args)
+
+val (stringify, args) = flagparse (CommandLine.arguments ())
 val strm =
-  case CommandLine.arguments () of
-    ["-"] => TextIO.stdIn
+  case args of
+    [] | ["-"] => TextIO.stdIn
   | [file] => TextIO.openIn file
   | _ => raise Fail "Invalid options"
-
-val doc = Parser.parse strm
-val _ = print (Value.toString (Table (Document.toList doc)) ^ "\n")
+val _ = print ((stringify o Table o Document.toList o Parser.parse) strm ^ "\n")
