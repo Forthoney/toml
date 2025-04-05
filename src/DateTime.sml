@@ -155,10 +155,12 @@ struct
       end
 
     fun scan s =
-      SOME (scan' s) handle Option | Subscript | Invalid => NONE
+      SOME (scan' s)
+      handle Option | Subscript | Invalid => NONE
 
     fun toString (SOME (pos, hour, minute)) =
-      (if pos then "+" else "-") ^ (String.concatWith ":" o map Int.toString) [hour, minute]
+          (if pos then "+" else "-")
+          ^ (String.concatWith ":" o map Int.toString) [hour, minute]
       | toString NONE = "Z"
   end
 
@@ -168,7 +170,7 @@ struct
 
   fun toString (date, time, offset) =
     Date.toString date ^ "T" ^ TimeOfDay.toString time ^ Offset.toString offset
-  
+
   fun scan s =
     let
       val (date, s) = Date.scan' s

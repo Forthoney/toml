@@ -1,4 +1,4 @@
-fun flagparse ("--human"::args) = (Printer.Debug.toString, args)
+fun flagparse ("--human" :: args) = (Printer.Debug.toString, args)
   | flagparse args = (Printer.Default.toString, args)
 
 val (stringify, args) = flagparse (CommandLine.arguments ())

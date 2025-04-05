@@ -213,17 +213,54 @@ struct
       fun skipUnderscore s =
         case getc s of
           SOME (#"_", s) => getc s
-        | default => default
+        | otherwise => otherwise
 
-      val integer =
+      fun isBinDigit c = c = #"0" orelse c = #"1"
+      fun isOctDigit c = Char.ord c >= 48 andalso Char.ord c < 58
+      fun isHexDigit c = Char.isDigit c orelse (Char.ord c >= 97 andalso Char.ord c < 103)
+
+      fun integer s =
         let
-          fun loop [] _ = NONE
-            | loop (r :: rs) s =
-                case Int.scan r skipUnderscore s of
-                  SOME (i, rest) => SOME (Integer i, rest)
-                | NONE => loop rs s
+          fun hasValidDigitStart isDigit s =
+            let
+              fun hasMoreDigit s = 
+                case skipUnderscore s of
+                  SOME (c, _) => isDigit c
+                | NONE => false
+            in
+              case getc s of
+                NONE => false
+              | SOME (c, s) =>
+                  isDigit c andalso (c <> #"0" orelse not (hasMoreDigit s))
+            end
+
+          fun validateScan fmt isDigit =
+            Opt.composePartial
+              (Int.scan fmt skipUnderscore, Opt.filter (hasValidDigitStart isDigit))
+
+          fun afterSign (c, s) =
+            if Char.isDigit c then
+              if c = #"0" then
+                case getc s of
+                  SOME (#"o", s) => validateScan StringCvt.OCT isOctDigit s
+                | SOME (#"x", s) => validateScan StringCvt.HEX isHexDigit s
+                | SOME (#"b", s) => validateScan StringCvt.BIN isBinDigit s
+                | SOME (c, _) =>
+                    if Char.isDigit c orelse c = #"_" then NONE else SOME (0, s)
+                | NONE => SOME (0, s)
+              else
+                Int.scan StringCvt.DEC skipUnderscore s
+            else
+              NONE
+
+          val helper =
+            Opt.compose (fn (i, s) => (Integer i, s), afterSign)
         in
-          loop [StringCvt.DEC, StringCvt.HEX, StringCvt.BIN, StringCvt.OCT]
+          case getc s of
+            SOME (#"+", s) => Opt.composePartial (helper, getc) s
+          | SOME (#"-", s) => Opt.composePartial (helper, getc) s
+          | SOME v => helper v
+          | NONE => NONE
         end
 
       val float = Opt.compose
