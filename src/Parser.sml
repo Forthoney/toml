@@ -210,61 +210,104 @@ struct
             NONE
         end
 
-      fun skipUnderscore s =
-        case getc s of
-          SOME (#"_", s) => getc s
-        | otherwise => otherwise
-
-      fun isBinDigit c = c = #"0" orelse c = #"1"
-      fun isOctDigit c = Char.ord c >= 48 andalso Char.ord c < 58
-      fun isHexDigit c = Char.isDigit c orelse (Char.ord c >= 97 andalso Char.ord c < 103)
-
-      fun integer s =
+      fun numeric s =
         let
-          fun hasValidDigitStart isDigit s =
-            let
-              fun hasMoreDigit s = 
-                case skipUnderscore s of
-                  SOME (c, _) => isDigit c
-                | NONE => false
-            in
-              case getc s of
-                NONE => false
-              | SOME (c, s) =>
-                  isDigit c andalso (c <> #"0" orelse not (hasMoreDigit s))
-            end
+          fun skipUnderscore s =
+            case getc s of
+              SOME (#"_", s) => getc s
+            | otherwise => otherwise
 
-          fun validateScan fmt isDigit =
-            Opt.composePartial
-              (Int.scan fmt skipUnderscore, Opt.filter (hasValidDigitStart isDigit))
+          fun isDigit StringCvt.HEX c =
+                Char.isDigit c
+                orelse (Char.ord c >= 97 andalso Char.ord c < 103)
+            | isDigit StringCvt.OCT c =
+                Char.ord c >= 48 andalso Char.ord c < 56
+            | isDigit StringCvt.BIN c = c = #"0" orelse c = #"1"
+            | isDigit StringCvt.DEC c = Char.isDigit c
 
-          fun afterSign (c, s) =
-            if Char.isDigit c then
-              if c = #"0" then
-                case getc s of
-                  SOME (#"o", s) => validateScan StringCvt.OCT isOctDigit s
-                | SOME (#"x", s) => validateScan StringCvt.HEX isHexDigit s
-                | SOME (#"b", s) => validateScan StringCvt.BIN isBinDigit s
-                | SOME (c, _) =>
-                    if Char.isDigit c orelse c = #"_" then NONE else SOME (0, s)
-                | NONE => SOME (0, s)
-              else
-                Int.scan StringCvt.DEC skipUnderscore s
+          fun nonDecimalInt radix s =
+            case Opt.composePartial (Opt.filter (isDigit radix o #1), getc) s of
+              NONE => NONE
+            | SOME (#"0", s) =>
+                (case Opt.composePartial (Opt.filter (isDigit radix), first) s of
+                   SOME _ => NONE
+                 | NONE => SOME (Integer 0, s))
+            | SOME _ =>
+                let
+                  val (num, s) =
+                    StringCvt.splitl (isDigit radix) skipUnderscore s
+                in
+                  case (Int.scan radix getc o full) num of
+                    SOME (i, _) => SOME (Integer i, s)
+                  | NONE => NONE
+                end
+
+          fun float prev s =
+            case Opt.composePartial (Opt.filter Char.isDigit, first) s of
+              NONE => NONE
+            | SOME _ =>
+                let
+                  val (frac, s) = StringCvt.splitl Char.isDigit skipUnderscore s
+                in
+                  case Real.fromString (prev ^ frac) of
+                    SOME v => SOME (Float v, s)
+                  | NONE => NONE
+                end
+
+          fun exponent prev s =
+            case getc s of
+              NONE => NONE
+            | SOME (#"+", s) => float prev s
+            | SOME (#"-", s) => float (prev ^ "-") s
+            | SOME _ => float prev s
+
+          fun body sign s =
+            if isPrefix "inf" s then
+              case sign of
+                SOME false => SOME (Float Real.negInf, triml 3 s)
+              | _ => SOME (Float Real.posInf, triml 3 s)
+            else if isPrefix "nan" s then
+              SOME (Float (0.0 / 0.0), triml 3 s)
             else
-              NONE
-
-          val helper =
-            Opt.compose (fn (i, s) => (Integer i, s), afterSign)
+              case Opt.composePartial (Opt.filter (Char.isDigit o #1), getc) s of
+                NONE => NONE
+              | SOME (#"0", s) =>
+                  (case (getc s, sign) of
+                     (SOME (#"x", s), NONE) => nonDecimalInt StringCvt.HEX s
+                   | (SOME (#"o", s), NONE) => nonDecimalInt StringCvt.OCT s
+                   | (SOME (#"b", s), NONE) => nonDecimalInt StringCvt.BIN s
+                   | (SOME (#".", s), SOME false) => float "-0." s
+                   | (SOME (#".", s), _) => float "0." s
+                   | (SOME (#"e", s), SOME false) => exponent "-0e" s
+                   | (SOME (#"e", s), _) => exponent "0e" s
+                   | (SOME (#"E", s), SOME false) => exponent "-0E" s
+                   | (SOME (#"E", s), _) => exponent "0E" s
+                   | _ => SOME (Integer 0, s))
+              | SOME _ =>
+                  let
+                    val (digits, s) =
+                      StringCvt.splitl Char.isDigit skipUnderscore s
+                    val digits =
+                      case sign of
+                        SOME false => "-" ^ digits
+                      | _ => digits
+                  in
+                    case getc s of
+                      SOME (#".", s) => float (digits ^ ".") s
+                    | SOME (#"e", s) => float (digits ^ "e") s
+                    | SOME (#"E", s) => float (digits ^ "E") s
+                    | _ =>
+                        (case Int.fromString digits of
+                           SOME i => SOME (Integer i, s)
+                         | NONE => NONE)
+                  end
         in
           case getc s of
-            SOME (#"+", s) => Opt.composePartial (helper, getc) s
-          | SOME (#"-", s) => Opt.composePartial (helper, getc) s
-          | SOME v => helper v
-          | NONE => NONE
+            NONE => NONE
+          | SOME (#"+", s) => body (SOME true) s
+          | SOME (#"-", s) => body (SOME false) s
+          | SOME _ => body NONE s
         end
-
-      val float = Opt.compose
-        (fn (v, rest) => (Float v, rest), Real.scan skipUnderscore)
 
       val bool = Opt.compose (fn (v, rest) => (Boolean v, rest), Bool.scan getc)
 
@@ -289,7 +332,7 @@ struct
               SOME v => SOME v
             | NONE => tryMap fs v
     in
-      case tryMap [array, str, bool, date, float, integer] line of
+      case tryMap [array, str, bool, date, numeric] line of
         SOME v => v
       | NONE => raise Fail "Unknown value type"
     end
