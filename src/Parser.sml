@@ -1,26 +1,18 @@
 type key = (string * string list)
+
+exception Unterminated of string
+exception InvalidEscape of string
+exception DuplicateKey
+exception NotEndOfLine of string
+
 structure Parser:
 sig
-  datatype elem = KVPair | Header | TableArray
-
-  exception Unterminated of string
-  exception InvalidEscape of string
-  exception DuplicateKey
-  exception Remaining of {ty: elem, remaining: string}
-
   val key: substring -> key * substring
   val value: TextIO.instream -> substring -> value * substring
   val keyValuePair: TextIO.instream -> substring -> (key * value)
   val parse: TextIO.instream -> Document.doc
 end =
 struct
-  datatype elem = KVPair | Header | TableArray
-
-  exception Unterminated of string
-  exception InvalidEscape of string
-  exception DuplicateKey
-  exception Remaining of {ty: elem, remaining: string}
-
   structure Opt = Option
 
   open Substring
@@ -348,7 +340,7 @@ struct
       val (v, rest) = value strm (equals line)
     in
       if isBlank rest then (k, v)
-      else raise Remaining {ty = KVPair, remaining = string rest}
+      else raise NotEndOfLine (string rest)
     end
 
   fun header terminator line =
