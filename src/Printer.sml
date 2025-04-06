@@ -62,7 +62,8 @@ struct
      | (LocalDate day) => tag "date-local" (Rfc3339.Date.toString day)
      | (LocalTime time) => tag "time-local" (Rfc3339.TimeOfDay.toString time)
      | (Array xs) => FMT.array (map toString xs)
-     | (Table kvs) => FMT.object (map (fn (k, v) => (String.toString k, toString v)) kvs)
+     | (Table kvs) =>
+      FMT.object (map (fn (k, v) => (String.toString k, toString v)) kvs)
 end
 
 structure Printer =

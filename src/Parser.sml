@@ -339,8 +339,7 @@ struct
       val (k, line) = key line
       val (v, rest) = value strm (equals line)
     in
-      if isBlank rest then (k, v)
-      else raise NotEndOfLine (string rest)
+      if isBlank rest then (k, v) else raise NotEndOfLine (string rest)
     end
 
   fun header terminator line =

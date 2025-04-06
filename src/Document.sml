@@ -37,6 +37,37 @@ struct
 
   fun concat (d1, d2) = d1 @ d2
 
+  fun insert kv doc =
+    let
+      fun loop ctxts tbl =
+        fn ((k, []), v) =>
+          if List.all (fn (k', _) => k' <> k) tbl then
+            let
+              val init = tbl @ [(k, v)]
+              fun insertSelf ((prev, myKey, post), tbl) =
+                List.revAppend (prev, (myKey, Table tbl) :: post)
+            in
+              SOME (foldl insertSelf init ctxts)
+            end
+          else
+            NONE
+         | ((k, k1 :: ks), v) =>
+          let
+            fun search prev =
+              fn [] => loop ((prev, k, []) :: ctxts) [] ((k1, ks), v)
+               | (k', v') :: rest =>
+                case (k = k', v') of
+                  (false, _) => search ((k', v') :: prev) rest
+                | (true, Table tbl) =>
+                    loop ((prev, k, rest) :: ctxts) tbl ((k1, ks), v)
+                | _ => NONE
+          in
+            search [] tbl
+          end
+    in
+      loop [] doc kv
+    end
+
   fun traverse baseCase =
     fn ((k, []), v) => baseCase (k, v)
      | ((k, kNext :: ks), v) =>
@@ -58,12 +89,6 @@ struct
               , traverse baseCase ((kNext, ks), v)
               ) inner
         | _ => NONE
-
-  val insert = traverse (fn (k, v) =>
-    Option.compose
-      ( fn tbl => (k, v) :: tbl
-      , Option.filter (List.all (fn (k', _) => k' <> k))
-      ))
 
   val pushAt =
     let
