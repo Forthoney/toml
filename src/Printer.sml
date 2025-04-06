@@ -42,7 +42,7 @@ struct
 
   fun array xs =
     #opener TOK.square ^ indent (String.concatWith TOK.comma xs)
-    ^ #closer TOK.curly
+    ^ #closer TOK.square
 end
 
 functor TomlTestJsonPrinterFn(FMT: JSON_PRINT_FMT): PRINTER =
@@ -52,7 +52,7 @@ struct
 
   val rec toString =
     fn (Str s) => tag "string" (String.toString s)
-     | (Integer i) => tag "string" (Int.toString i)
+     | (Integer i) => tag "integer" (Int.toString i)
      | (Float f) => tag "float" (Real.toString f)
      | (Boolean b) => tag "bool" (Bool.toString b)
      | (OffsetDateTime dt) => tag "datetime" (Rfc3339.toString dt)
@@ -62,7 +62,7 @@ struct
      | (LocalDate day) => tag "date-local" (Rfc3339.Date.toString day)
      | (LocalTime time) => tag "time-local" (Rfc3339.TimeOfDay.toString time)
      | (Array xs) => FMT.array (map toString xs)
-     | (Table kvs) => FMT.object (map (fn (k, v) => (k, toString v)) kvs)
+     | (Table kvs) => FMT.object (map (fn (k, v) => (String.toString k, toString v)) kvs)
 end
 
 structure Printer =
