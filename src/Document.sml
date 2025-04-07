@@ -37,70 +37,42 @@ struct
 
   fun concat (d1, d2) = d1 @ d2
 
+  fun searchWithContext k =
+    let
+      fun loop _ [] = NONE
+        | loop prev ((k', v') :: xs) =
+            if k' = k then SOME (prev, v', xs) else loop ((k', v') :: prev) xs
+    in
+      loop []
+    end
+
+  fun insertSelf ((prev, myKey, post), tbl) =
+    List.revAppend (prev, (myKey, Table tbl) :: post)
+
+  fun traverse baseCase ctxts tbl =
+    fn ((k, []), v) =>
+      (case baseCase (k, v, tbl) of
+         SOME init => SOME (foldl insertSelf init ctxts)
+       | NONE => NONE)
+     | ((k, k1 :: ks), v) =>
+      case searchWithContext k tbl of
+        SOME (prev, Table tbl, rest) =>
+          traverse baseCase ((prev, k, rest) :: ctxts) tbl ((k1, ks), v)
+      | NONE => traverse baseCase ((rev tbl, k, []) :: ctxts) [] ((k1, ks), v)
+      | SOME _ => NONE
+
   fun insert kv doc =
-    let
-      fun loop ctxts tbl =
-        fn ((k, []), v) =>
-          if List.all (fn (k', _) => k' <> k) tbl then
-            let
-              val init = tbl @ [(k, v)]
-              fun insertSelf ((prev, myKey, post), tbl) =
-                List.revAppend (prev, (myKey, Table tbl) :: post)
-            in
-              SOME (foldl insertSelf init ctxts)
-            end
-          else
-            NONE
-         | ((k, k1 :: ks), v) =>
-          let
-            fun search prev =
-              fn [] => loop ((prev, k, []) :: ctxts) [] ((k1, ks), v)
-               | (k', v') :: rest =>
-                case (k = k', v') of
-                  (false, _) => search ((k', v') :: prev) rest
-                | (true, Table tbl) =>
-                    loop ((prev, k, rest) :: ctxts) tbl ((k1, ks), v)
-                | _ => NONE
-          in
-            search [] tbl
-          end
-    in
-      loop [] doc kv
-    end
+    traverse
+      (fn (k, v, tbl) =>
+         if List.all (fn (k', _) => k' <> k) tbl then SOME (tbl @ [(k, v)])
+         else NONE) [] doc kv
 
-  fun traverse baseCase =
-    fn ((k, []), v) => baseCase (k, v)
-     | ((k, kNext :: ks), v) =>
-      fn [] =>
-        Option.compose
-          ( fn updated => [(k, Table updated)]
-          , traverse baseCase ((kNext, ks), v)
-          ) []
-       | (k', v') :: rest =>
-        case (k' = k, v') of
-          (false, _) =>
-            Option.compose
-              ( fn recResult => (k', v') :: recResult
-              , traverse baseCase ((k, kNext :: ks), v)
-              ) rest
-        | (_, Table inner) =>
-            Option.compose
-              ( fn updated => (k, Table updated) :: rest
-              , traverse baseCase ((kNext, ks), v)
-              ) inner
-        | _ => NONE
-
-  val pushAt =
-    let
-      fun loop acc (k, v) =
-        fn [] => SOME (rev ((k, Array [v]) :: acc))
-         | (k', v') :: rest =>
-          case (k' = k, v') of
-            (false, _) => traverse (loop ((k', v') :: acc)) ((k, []), v) rest
-          | (_, Array vs) =>
-              SOME (List.revAppend (acc, (k', Array (v :: vs)) :: rest))
-          | _ => NONE
-    in
-      traverse (loop [])
-    end
+  fun pushAt kv doc =
+    traverse
+      (fn (k, v, tbl) =>
+         case searchWithContext k tbl of
+           SOME (prev, Array vs, rest) =>
+             SOME (List.revAppend (prev, (k, Array (vs @ [v])) :: rest))
+         | NONE => SOME (tbl @ [(k, Array [v])])
+         | SOME _ => NONE) [] doc kv
 end
