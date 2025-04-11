@@ -169,13 +169,13 @@ struct
                   val acc = v :: acc
                 in
                   case getc (dropl Char.isSpace s) of
-                    SOME (#"]", s) => SOME (Array (rev acc), s)
+                    SOME (#"]", s) => SOME (Array acc, s)
                   | SOME (#",", s) =>
                       let
                         val s = (dropl Char.isSpace s)
                       in
                         case getc s of
-                          SOME (#"]", s) => SOME (Array (rev acc), s)
+                          SOME (#"]", s) => SOME (Array acc, s)
                         | _ => loop acc s
                       end
                   | _ => NONE
@@ -374,25 +374,24 @@ struct
           fun insert kv =
             Opt.valOf (Document.insert kv doc)
             handle Option => raise DuplicateKey
-
-          fun helper line =
-            case getc (dropl Char.isSpace line) of
-              SOME (#"#", _) | NONE => loop topLevel context doc
-            | SOME (#"[", line) =>
-                let
-                  val topLevel = flush topLevel context doc
-                  val context =
-                    case getc line of
-                      SOME (#"[", line) => Append (header "]]" line)
-                    | _ => (Insert o op:: o header "]") line
-                in
-                  loop topLevel context Document.new
-                end
-            | _ => (loop topLevel context o insert o keyValuePair strm) line
         in
           case Opt.compose (dropl Char.isSpace o full, TextIO.inputLine) strm of
-            SOME line => helper line
-          | NONE => flush topLevel context doc
+            NONE => flush topLevel context doc
+          | SOME line => (
+              case getc line of
+                SOME (#"#", _) | NONE => loop topLevel context doc
+              | SOME (#"[", line) =>
+                  let
+                    val topLevel = flush topLevel context doc
+                    val context =
+                      case getc line of
+                        SOME (#"[", line) => Append (header "]]" line)
+                      | _ => (Insert o op:: o header "]") line
+                  in
+                    loop topLevel context Document.new
+                  end
+              | _ => (loop topLevel context o insert o keyValuePair strm) line
+            )
         end
     in
       loop Document.new (Insert []) Document.new

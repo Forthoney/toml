@@ -41,7 +41,7 @@ struct
     ^ #closer TOK.curly
 
   fun array xs =
-    #opener TOK.square ^ indent (String.concatWith TOK.comma xs)
+    #opener TOK.square ^ indent (String.concatWith TOK.comma (rev xs))
     ^ #closer TOK.square
 end
 

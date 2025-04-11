@@ -58,13 +58,13 @@ struct
       case searchWithContext k tbl of
         SOME (prev, Table tbl, rest) =>
           traverse baseCase ((prev, k, rest) :: ctxts) tbl ((k1, ks), v)
-      | NONE => traverse baseCase ((rev tbl, k, []) :: ctxts) [] ((k1, ks), v)
+      | NONE => traverse baseCase (([], k, tbl) :: ctxts) [] ((k1, ks), v)
       | SOME _ => NONE
 
   fun insert kv doc =
     traverse
       (fn (k, v, tbl) =>
-         if List.all (fn (k', _) => k' <> k) tbl then SOME (tbl @ [(k, v)])
+         if List.all (fn (k', _) => k' <> k) tbl then SOME ((k, v)::tbl)
          else NONE) [] doc kv
 
   fun pushAt kv doc =
@@ -72,7 +72,7 @@ struct
       (fn (k, v, tbl) =>
          case searchWithContext k tbl of
            SOME (prev, Array vs, rest) =>
-             SOME (List.revAppend (prev, (k, Array (vs @ [v])) :: rest))
-         | NONE => SOME (tbl @ [(k, Array [v])])
+             SOME (List.revAppend (prev, (k, Array (v::vs)) :: rest))
+         | NONE => SOME ((k, Array [v]):: tbl)
          | SOME _ => NONE) [] doc kv
 end
