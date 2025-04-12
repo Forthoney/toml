@@ -47,11 +47,23 @@ end
 
 functor TomlTestJsonPrinterFn(FMT: JSON_PRINT_FMT): PRINTER =
 struct
+  val jsonEscape = String.translate
+    (fn #"\"" => "\\\""
+      | #"\\" => "\\\\"
+      | #"/" => "\\/"
+      | #"\b" => "\\b"
+      | #"\f" => "\\f"
+      | #"\n" => "\\n"
+      | #"\r" => "\\r"
+      | #"\t" => "\\t"
+      | #"\000" => "\\u0000"
+      | c => String.str c)
+
   fun tag ty v =
     FMT.object [("type", "\"" ^ ty ^ "\""), ("value", "\"" ^ v ^ "\"")]
 
   val rec toString =
-    fn (Str s) => tag "string" (String.toString s)
+    fn (Str s) => tag "string" (jsonEscape s)
      | (Integer i) => tag "integer" (Int.toString i)
      | (Float f) => tag "float" (Real.toString f)
      | (Boolean b) => tag "bool" (Bool.toString b)
@@ -90,5 +102,5 @@ struct
   structure CompactFmt = JsonPrintFmtFn(CompactToken)
 
   structure Debug = TomlTestJsonPrinterFn(HumanFmt)
-  structure Default = TomlTestJsonPrinterFn(CompactFmt)
+  structure Default = TomlTestJsonPrinterFn(HumanFmt)
 end

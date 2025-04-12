@@ -1,6 +1,12 @@
 $(SML_LIB)/basis/basis.mlb
 
-DateTime.sml
-Document.sml
-Printer.sml
-Parser.sml
+ann
+	"allowOrPats true"
+	"allowExtendedNumConsts true"
+in
+	DateTime.sml
+	Unicode.sml
+	Document.sml
+	Printer.sml
+	Parser.sml
+end

@@ -64,7 +64,7 @@ struct
   fun insert kv doc =
     traverse
       (fn (k, v, tbl) =>
-         if List.all (fn (k', _) => k' <> k) tbl then SOME ((k, v)::tbl)
+         if List.all (fn (k', _) => k' <> k) tbl then SOME ((k, v) :: tbl)
          else NONE) [] doc kv
 
   fun pushAt kv doc =
@@ -72,7 +72,7 @@ struct
       (fn (k, v, tbl) =>
          case searchWithContext k tbl of
            SOME (prev, Array vs, rest) =>
-             SOME (List.revAppend (prev, (k, Array (v::vs)) :: rest))
-         | NONE => SOME ((k, Array [v]):: tbl)
+             SOME (List.revAppend (prev, (k, Array (v :: vs)) :: rest))
+         | NONE => SOME ((k, Array [v]) :: tbl)
          | SOME _ => NONE) [] doc kv
 end

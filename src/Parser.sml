@@ -67,27 +67,36 @@ struct
     let
       val (termStart, termRest) = (Opt.valOf o getc o full) terminator
       val termRest = string termRest
+
       fun loop (acc, s) =
         let
           val (pre, suf) = splitl (fn c => c <> termStart andalso c <> #"\\") s
           val pre = string pre
-          fun escape s =
-            case getc s of
-              SOME (#"n", rest) => loop (pre ^ "\n", rest)
-            | SOME (#"b", rest) => loop (pre ^ "\b", rest)
-            | SOME (#"t", rest) => loop (pre ^ "\t", rest)
-            | SOME (#"\"", rest) => loop (pre ^ "\"", rest)
-            | SOME (#"\\", rest) => loop (pre ^ "\\", rest)
-            | SOME (c, rest) =>
-                raise InvalidEscape (String.str #"\\" ^ String.str c)
-            | NONE => raise InvalidEscape (String.str #"\\")
+          fun escape (c, rest) =
+            case c of
+              #"n" => ("\n", rest)
+            | #"b" => ("\b", rest)
+            | #"t" => ("\t", rest)
+            | #"f" => ("\f", rest)
+            | #"r" => ("\r", rest)
+            | #"\"" => ("\"", rest)
+            | #"\\" => ("\\", rest)
+            | #"u" => Opt.valOf (Unicode.shortEscape rest)
+            | #"U" => Opt.valOf (Unicode.longEscape rest)
+            | c => raise InvalidEscape (String.str #"\\" ^ String.str c)
         in
           case getc suf of
             NONE =>
               (case TextIO.inputLine strm of
                  SOME l => loop (acc ^ pre, full l)
                | NONE => raise Unterminated terminator)
-          | SOME (#"\\", suf) => escape suf
+          | SOME (#"\\", suf) =>
+              (case getc suf of
+                 SOME v =>
+                   let val (escaped, rest) = escape v
+                   in loop (acc ^ pre ^ escaped, rest)
+                   end
+               | NONE => raise InvalidEscape (String.str #"\\"))
           | SOME (_, suf) =>
               if isPrefix termRest suf then
                 (acc ^ pre, triml (String.size termRest) suf)
@@ -377,21 +386,20 @@ struct
         in
           case Opt.compose (dropl Char.isSpace o full, TextIO.inputLine) strm of
             NONE => flush topLevel context doc
-          | SOME line => (
-              case getc line of
-                SOME (#"#", _) | NONE => loop topLevel context doc
-              | SOME (#"[", line) =>
-                  let
-                    val topLevel = flush topLevel context doc
-                    val context =
-                      case getc line of
-                        SOME (#"[", line) => Append (header "]]" line)
-                      | _ => (Insert o op:: o header "]") line
-                  in
-                    loop topLevel context Document.new
-                  end
-              | _ => (loop topLevel context o insert o keyValuePair strm) line
-            )
+          | SOME line =>
+              (case getc line of
+                 SOME (#"#", _) | NONE => loop topLevel context doc
+               | SOME (#"[", line) =>
+                   let
+                     val topLevel = flush topLevel context doc
+                     val context =
+                       case getc line of
+                         SOME (#"[", line) => Append (header "]]" line)
+                       | _ => (Insert o op:: o header "]") line
+                   in
+                     loop topLevel context Document.new
+                   end
+               | _ => (loop topLevel context o insert o keyValuePair strm) line)
         end
     in
       loop Document.new (Insert []) Document.new

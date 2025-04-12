@@ -1,2 +1,7 @@
 src.mlb
-Main.sml
+
+ann
+	"allowOrPats true"
+in
+	Main.sml
+end

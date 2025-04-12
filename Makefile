@@ -3,7 +3,7 @@ RELEASE := $(BUILD)/toml
 DBG := $(BUILD)/toml.dbg
 TESTER := $(BUILD)/tester
 
-COMMON_FLAGS := -default-ann 'allowOrPats true'
+COMMON_FLAGS :=
 DBG_FLAGS := -const 'Exn.keepHistory true'
 
 SOURCE := src/*.sml src/*.mlb
