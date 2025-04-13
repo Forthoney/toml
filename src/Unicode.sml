@@ -1,4 +1,4 @@
-structure Unicode:
+structure Utf8:
 sig
   val hexToWord: char -> Word8.word option
   val unicodify: Word32.word -> string
@@ -47,6 +47,7 @@ struct
 
   fun unicodify bytes =
     let
+      (* Set the biggest two bits of a byte as 10 *)
       fun setTop10 b =
         b andb 0wb0011_1111 orb 0wb1000_0000
 

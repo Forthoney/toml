@@ -81,8 +81,8 @@ struct
             | #"r" => ("\r", rest)
             | #"\"" => ("\"", rest)
             | #"\\" => ("\\", rest)
-            | #"u" => Opt.valOf (Unicode.shortEscape rest)
-            | #"U" => Opt.valOf (Unicode.longEscape rest)
+            | #"u" => Opt.valOf (Utf8.shortEscape rest)
+            | #"U" => Opt.valOf (Utf8.longEscape rest)
             | c => raise InvalidEscape (String.str #"\\" ^ String.str c)
         in
           case getc suf of
@@ -313,16 +313,11 @@ struct
       val bool = Opt.compose (fn (v, rest) => (Boolean v, rest), Bool.scan getc)
 
       fun date s =
-        case Rfc3339.Date.scan s of
-          SOME (date, s) =>
-            (case Rfc3339.TimeOfDay.scan s of
-               SOME (tod, s) =>
-                 (case Rfc3339.Offset.scan s of
-                    SOME (offset, s) =>
-                      SOME (OffsetDateTime (date, tod, offset), s)
-                  | NONE => SOME (LocalDateTime (date, tod), s))
-             | NONE => SOME (LocalDate date, s))
-        | NONE =>
+        case Rfc3339.partialScan s of
+          SOME (Rfc3339.Date d, s) => SOME (LocalDate d, s)
+        | SOME (Rfc3339.DateTime dt, s) => SOME (LocalDateTime dt, s)
+        | SOME (Rfc3339.Full dto, s) => SOME (OffsetDateTime dto, s)
+        | NONE => 
             (case Rfc3339.TimeOfDay.scan s of
                SOME (tod, s) => SOME (LocalTime tod, s)
              | NONE => NONE)
@@ -347,8 +342,11 @@ struct
     let
       val (k, line) = key line
       val (v, rest) = value strm (equals line)
+      val rest = dropl Char.isSpace rest
     in
-      if isBlank rest then (k, v) else raise NotEndOfLine (string rest)
+      case getc rest of
+        SOME (#"#", _) | NONE => (k, v)
+      | SOME _ => raise NotEndOfLine (string rest)
     end
 
   fun header terminator line =
@@ -371,17 +369,17 @@ struct
       fun flush dest (Insert []) buffer = Document.concat (dest, buffer)
         | flush dest (Insert (k :: ks)) buffer =
             (Opt.valOf
-               (Document.insert ((k, ks), Table (Document.toList buffer)) dest)
+               (Document.insert dest ((k, ks), Table (Document.toList buffer)))
              handle Option => raise DuplicateKey)
         | flush dest (Append (k, ks)) buffer =
             (Opt.valOf
-               (Document.pushAt ((k, ks), Table (Document.toList buffer)) dest)
+               (Document.pushAt dest ((k, ks), Table (Document.toList buffer)))
              handle Option => raise DuplicateKey)
 
       fun loop topLevel context doc =
         let
           fun insert kv =
-            Opt.valOf (Document.insert kv doc)
+            Opt.valOf (Document.insert doc kv)
             handle Option => raise DuplicateKey
         in
           case Opt.compose (dropl Char.isSpace o full, TextIO.inputLine) strm of

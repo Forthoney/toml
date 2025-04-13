@@ -62,10 +62,15 @@ struct
   fun tag ty v =
     FMT.object [("type", "\"" ^ ty ^ "\""), ("value", "\"" ^ v ^ "\"")]
 
+  fun patchSign s =
+    case Substring.getc (Substring.full s) of
+      SOME (#"~", rest) => "-" ^ Substring.string rest
+    | _ => s
+
   val rec toString =
     fn (Str s) => tag "string" (jsonEscape s)
-     | (Integer i) => tag "integer" (Int.toString i)
-     | (Float f) => tag "float" (Real.toString f)
+     | (Integer i) => (tag "integer" o patchSign o Int.toString) i
+     | (Float f) => (tag "float" o patchSign o Real.toString) f
      | (Boolean b) => tag "bool" (Bool.toString b)
      | (OffsetDateTime dt) => tag "datetime" (Rfc3339.toString dt)
      | (LocalDateTime (day, time)) =>

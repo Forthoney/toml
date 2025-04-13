@@ -3,7 +3,8 @@ datatype value =
 | Integer of int
 | Float of real
 | Boolean of bool
-| OffsetDateTime of (Rfc3339.date * Rfc3339.time_of_day * Rfc3339.offset)
+| OffsetDateTime of
+    {date: Rfc3339.date, time: Rfc3339.time_of_day, offset: Rfc3339.offset}
 | LocalDateTime of (Rfc3339.date * Rfc3339.time_of_day)
 | LocalDate of Rfc3339.date
 | LocalTime of Rfc3339.time_of_day
@@ -20,8 +21,8 @@ sig
   val fromList: (k * v) list -> doc
   val toList: doc -> (k * v) list
   val concat: (doc * doc) -> doc
-  val insert: ((k * k list) * v) -> doc -> doc option
-  val pushAt: ((k * k list) * v) -> doc -> doc option
+  val insert: doc -> ((k * k list) * v) -> doc option
+  val pushAt: doc -> ((k * k list) * v) -> doc option
 end
 
 structure Document :> DOCUMENT where type k = string where type v = value =
@@ -61,18 +62,33 @@ struct
       | NONE => traverse baseCase (([], k, tbl) :: ctxts) [] ((k1, ks), v)
       | SOME _ => NONE
 
-  fun insert kv doc =
-    traverse
-      (fn (k, v, tbl) =>
-         if List.all (fn (k', _) => k' <> k) tbl then SOME ((k, v) :: tbl)
-         else NONE) [] doc kv
+  fun merge (xs, ys) =
+    if List.exists (fn (xk, _) => List.exists (fn (yk, _) => yk = xk) ys) xs then
+      NONE
+    else
+      SOME (xs @ ys)
 
-  fun pushAt kv doc =
+  val insert =
+    traverse
+      (fn (k, Table kvs, tbl) =>
+         (case searchWithContext k tbl of
+            SOME (prev, Table kvs', rest) =>
+              (case merge (kvs, kvs') of
+                 NONE => NONE
+               | SOME kvs =>
+                   SOME (List.revAppend (prev, (k, Table kvs) :: rest)))
+          | NONE => SOME ((k, Table kvs) :: tbl)
+          | SOME _ => NONE)
+        | (k, v, tbl) =>
+         if List.all (fn (k', _) => k' <> k) tbl then SOME ((k, v) :: tbl)
+         else NONE) []
+
+  val pushAt =
     traverse
       (fn (k, v, tbl) =>
          case searchWithContext k tbl of
            SOME (prev, Array vs, rest) =>
              SOME (List.revAppend (prev, (k, Array (v :: vs)) :: rest))
          | NONE => SOME ((k, Array [v]) :: tbl)
-         | SOME _ => NONE) [] doc kv
+         | SOME _ => NONE) []
 end

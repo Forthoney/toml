@@ -20,4 +20,4 @@ val _ =
     Unterminated s => printErr (s ^ "was not terminated")
   | InvalidEscape s => printErr ("Invalid escape string: " ^ s)
   | DuplicateKey => printErr ("Duplicate key: ")
-  | NotEndOfLine s => printErr ("Expected end of line after " ^ s)
+  | NotEndOfLine s => printErr ("Expected end of line but found " ^ s)

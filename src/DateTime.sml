@@ -1,33 +1,71 @@
-structure Rfc3339 =
+exception Month of int
+
+signature SERIALIZABLE =
+sig
+  type t
+  val scan': substring -> (t * substring)
+  val scan: substring -> (t * substring) option
+  val toString: t -> string
+end
+
+signature DATE =
+sig
+  include SERIALIZABLE
+
+  val isLeapYear: int -> bool
+  val monthFromInt: int -> Date.month
+  val monthToInt: Date.month -> int
+end
+
+signature RFC3339 =
+sig
+  structure Date: DATE
+  structure TimeOfDay: SERIALIZABLE
+  structure Offset: SERIALIZABLE
+
+  type date = Date.t
+  type time_of_day = TimeOfDay.t
+  type offset = Offset.t
+
+  type t = {date: date, time: time_of_day, offset: offset}
+
+  datatype partial = Date of date | DateTime of date * time_of_day | Full of t
+
+  val toString: t -> string
+  val scan: substring -> (t * substring) option
+  val partialScan: substring -> (partial * substring) option
+end
+
+structure Rfc3339: RFC3339 =
 struct
   open Substring
   structure Opt = Option
 
-  exception Invalid
+  exception Format
 
   fun digits n {min, max} s =
-    let
-      val (n, s) = splitAt (s, n)
-      fun isCvtSuccess (n, s) =
-        n >= min andalso n < max andalso isEmpty s
-    in
-      Opt.valOf
-        (Opt.compose
-           ( fn (n, _) => (n, s)
-           , Opt.composePartial
-               (Opt.filter isCvtSuccess, Int.scan StringCvt.DEC getc)
-           ) n)
-    end
+    if size s < n then
+      raise Format
+    else
+      let
+        val (num, s) = splitAt (s, n)
+      in
+        case Int.scan StringCvt.DEC getc num of
+          NONE => raise Format
+        | SOME (n, s') =>
+            if n >= min andalso n < max andalso isEmpty s' then (n, s)
+            else raise Format
+      end
 
-  fun consume opts =
-    #2 o Opt.valOf
-    o
-    Opt.composePartial
-      (Opt.filter (fn (c, _) => List.exists (fn c' => c' = c) opts), getc)
+  fun consume opts s =
+    case getc s of
+      NONE => raise Format
+    | SOME (c, s) =>
+        if List.exists (fn c' => c' = c) opts then s else raise Format
 
-  structure Date =
+  structure Date: DATE =
   struct
-    type date = {year: int, month: Date.month, day: int}
+    type t = {year: int, month: Date.month, day: int}
 
     fun isLeapYear y =
       y mod 4 = 0 andalso (y mod 100 <> 0 orelse y mod 400 = 0)
@@ -45,6 +83,7 @@ struct
        | 10 => Date.Oct
        | 11 => Date.Nov
        | 12 => Date.Dec
+       | otherwise => raise Month otherwise
 
     val monthToInt =
       fn Date.Jan => 1
@@ -85,35 +124,35 @@ struct
 
     fun scan s =
       SOME (scan' s)
-      handle Option | Subscript => NONE
+      handle Format | Month _ => NONE
   end
 
   val timeHour = digits 2 {min = 0, max = 23}
   val timeMinute = digits 2 {min = 0, max = 59}
 
-  structure TimeOfDay =
+  structure TimeOfDay: SERIALIZABLE =
   struct
-    type time_of_day =
-      {hour: int, minute: int, second: int, secfrac: int option}
+    type t = {hour: int, minute: int, second: int, secfrac: int option}
 
     fun scan' s =
       let
         val (hour, s) = timeHour s
+        val s = consume [#":"] s
         val (minute, s) = timeMinute s
+        val s = consume [#":"] s
         val (second, s) = digits 2 {min = 0, max = 59} s
         val (secfrac, s) =
           case getc s of
             SOME (#".", s) =>
-              Opt.valOf
-                (Opt.compose
-                   ( fn (i, s) => (SOME i, s)
-                   , Opt.composePartial
-                       ( Int.scan StringCvt.DEC getc
-                       , Opt.filter (fn s =>
-                           Opt.getOpt
-                             (Opt.compose (Char.isDigit, first) s, false))
-                       )
-                   ) s)
+              (case first s of
+                 NONE => raise Format
+               | SOME c =>
+                   if Char.isDigit c then
+                     case Int.scan StringCvt.DEC getc s of
+                       SOME (i, s) => (SOME i, s)
+                     | NONE => raise Format
+                   else
+                     raise Format)
           | _ => (NONE, s)
       in
         ({hour = hour, minute = minute, second = second, secfrac = secfrac}, s)
@@ -121,19 +160,24 @@ struct
 
     fun scan s =
       SOME (scan' s)
-      handle Option | Subscript => NONE
+      handle Format => NONE
 
     fun toString {hour, minute, second, secfrac} =
       let
-        val s = Opt.getOpt (Opt.map (fn s => "." ^ Int.toString s) secfrac, "")
+        fun normalize i =
+          if i < 10 then "0" ^ Int.toString i else Int.toString i
+        val s =
+          case secfrac of
+            SOME v => "." ^ Int.toString v
+          | NONE => ""
       in
-        (String.concatWith ":" o map Int.toString) [hour, minute, second] ^ s
+        (String.concatWith ":" o map normalize) [hour, minute, second] ^ s
       end
   end
 
-  structure Offset =
+  structure Offset: SERIALIZABLE =
   struct
-    type offset = (bool * int * int) option
+    type t = (bool * int * int) option
 
     fun scan' s =
       let
@@ -151,12 +195,12 @@ struct
         | SOME (#"z", s) => (NONE, s)
         | SOME (#"+", s) => helper true s
         | SOME (#"-", s) => helper false s
-        | _ => raise Invalid
+        | _ => raise Format
       end
 
     fun scan s =
       SOME (scan' s)
-      handle Option | Subscript | Invalid => NONE
+      handle Format | Month _ => NONE
 
     fun toString (SOME (pos, hour, minute)) =
           (if pos then "+" else "-")
@@ -164,11 +208,7 @@ struct
       | toString NONE = "Z"
   end
 
-  type date = Date.date
-  type time_of_day = TimeOfDay.time_of_day
-  type offset = Offset.offset
-
-  fun toString (date, time, offset) =
+  fun toString {date, time, offset} =
     Date.toString date ^ "T" ^ TimeOfDay.toString time ^ Offset.toString offset
 
   fun scan s =
@@ -179,6 +219,30 @@ struct
       val (offset, s) = Offset.scan' s
     in
       SOME ({date = date, time = time, offset = offset}, s)
-      handle Option | Subscript | Invalid => NONE
+      handle Format | Month _ => NONE
     end
+
+
+  type date = Date.t
+  type time_of_day = TimeOfDay.t
+  type offset = Offset.t
+  type t = {date: date, time: time_of_day, offset: offset}
+
+  datatype partial = Date of date | DateTime of date * time_of_day | Full of t
+
+  fun partialScan s =
+    case Date.scan s of
+      NONE => NONE
+    | SOME (date, s) =>
+        (case getc s of
+           SOME (#"T", s') | SOME (#"t", s') | SOME (#" ", s') =>
+             (case TimeOfDay.scan s' of
+                NONE => SOME (Date date, s)
+              | SOME (time, s) =>
+                  (case Offset.scan s of
+                     NONE => SOME (DateTime (date, time), s)
+                   | SOME (offset, s) =>
+                       SOME
+                         (Full {date = date, time = time, offset = offset}, s)))
+         | _ => SOME (Date date, s))
 end
