@@ -27,6 +27,3 @@ test: $(TESTER)
 
 clean:
 	rm -f $(BUILD)/*
-
-deps:
-	jinmori add -r requirements.txt
