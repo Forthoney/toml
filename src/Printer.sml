@@ -80,7 +80,7 @@ struct
      | (LocalTime time) => tag "time-local" (Rfc3339.TimeOfDay.toString time)
      | (Array xs) => FMT.array (map toString xs)
      | (Table kvs) =>
-      FMT.object (map (fn (k, v) => (String.toString k, toString v)) kvs)
+      FMT.object (map (fn (k, v) => (jsonEscape k, toString v)) kvs)
 end
 
 structure Printer =

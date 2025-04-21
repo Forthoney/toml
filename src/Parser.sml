@@ -128,9 +128,7 @@ struct
     let
       fun bareKey s =
         let
-          fun isValid c =
-            Char.isAscii c
-            andalso (Char.isAlphaNum c orelse c = #"-" orelse c = #"_")
+          fun isValid c = Char.isAlphaNum c orelse c = #"-" orelse c = #"_"
           val (pre, suf) = splitl isValid s
         in
           if isEmpty pre then
@@ -295,8 +293,8 @@ struct
                   in
                     case getc s of
                       SOME (#".", s) => float (digits ^ ".") s
-                    | SOME (#"e", s) => float (digits ^ "e") s
-                    | SOME (#"E", s) => float (digits ^ "E") s
+                    | SOME (#"e", s) => exponent (digits ^ "e") s
+                    | SOME (#"E", s) => exponent (digits ^ "E") s
                     | _ =>
                         (case Int.fromString digits of
                            SOME i => SOME (Integer i, s)
@@ -317,7 +315,7 @@ struct
           SOME (Rfc3339.Date d, s) => SOME (LocalDate d, s)
         | SOME (Rfc3339.DateTime dt, s) => SOME (LocalDateTime dt, s)
         | SOME (Rfc3339.Full dto, s) => SOME (OffsetDateTime dto, s)
-        | NONE => 
+        | NONE =>
             (case Rfc3339.TimeOfDay.scan s of
                SOME (tod, s) => SOME (LocalTime tod, s)
              | NONE => NONE)
@@ -351,7 +349,7 @@ struct
 
   fun header terminator line =
     let
-      val ((k, ks), line) = key line
+      val ((k, ks), line) = key (dropl Char.isSpace line)
     in
       if
         isPrefix terminator line
@@ -368,12 +366,12 @@ struct
 
       fun flush dest (Insert []) buffer = Document.concat (dest, buffer)
         | flush dest (Insert (k :: ks)) buffer =
-            (Opt.valOf
-               (Document.insert dest ((k, ks), Table (Document.toList buffer)))
+            (Opt.valOf (Document.insert dest
+               ((k, ks), Table (Document.toList buffer)))
              handle Option => raise DuplicateKey)
         | flush dest (Append (k, ks)) buffer =
-            (Opt.valOf
-               (Document.pushAt dest ((k, ks), Table (Document.toList buffer)))
+            (Opt.valOf (Document.pushAt dest
+               ((k, ks), Table (Document.toList buffer)))
              handle Option => raise DuplicateKey)
 
       fun loop topLevel context doc =

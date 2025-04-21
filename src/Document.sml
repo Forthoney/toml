@@ -38,7 +38,7 @@ struct
 
   fun concat (d1, d2) = d1 @ d2
 
-  fun searchWithContext k =
+  fun search k =
     let
       fun loop _ [] = NONE
         | loop prev ((k', v') :: xs) =
@@ -56,7 +56,7 @@ struct
          SOME init => SOME (foldl insertSelf init ctxts)
        | NONE => NONE)
      | ((k, k1 :: ks), v) =>
-      case searchWithContext k tbl of
+      case search k tbl of
         SOME (prev, Table tbl, rest) =>
           traverse baseCase ((prev, k, rest) :: ctxts) tbl ((k1, ks), v)
       | NONE => traverse baseCase (([], k, tbl) :: ctxts) [] ((k1, ks), v)
@@ -71,7 +71,7 @@ struct
   val insert =
     traverse
       (fn (k, Table kvs, tbl) =>
-         (case searchWithContext k tbl of
+         (case search k tbl of
             SOME (prev, Table kvs', rest) =>
               (case merge (kvs, kvs') of
                  NONE => NONE
@@ -86,7 +86,7 @@ struct
   val pushAt =
     traverse
       (fn (k, v, tbl) =>
-         case searchWithContext k tbl of
+         case search k tbl of
            SOME (prev, Array vs, rest) =>
              SOME (List.revAppend (prev, (k, Array (v :: vs)) :: rest))
          | NONE => SOME ((k, Array [v]) :: tbl)
