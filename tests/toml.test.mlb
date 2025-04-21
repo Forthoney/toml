@@ -1,3 +1,4 @@
 ../src/src.mlb
 $(SML_LIB)/basis/mlton.mlb
+$(PKGS)/github.com/Forthoney/asura/src/src.mlb
 Test.sml
