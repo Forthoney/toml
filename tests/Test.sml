@@ -5,6 +5,86 @@ structure P = Parser
 val emptyStrm = TextIO.openString ""
 val full = Substring.full
 
+structure StringTests =
+struct
+
+  fun basic () =
+    case P.value emptyStrm (full "\"hello world\"") of
+      (Str s, rest) => (assert (s = "hello world"); assert (Substring.isEmpty rest))
+    | _ => assert false
+
+  fun basicWithEscape () =
+    case P.value emptyStrm (full "\"\\thello world\"") of
+      (Str s, rest) => (assert (s = "\thello world"); assert (Substring.isEmpty rest))
+    | _ => assert false
+
+  fun basicWithQuoteEscape () =
+    case P.value emptyStrm (full "\"hello \\\" world\"") of
+      (Str s, rest) => (assert (s = "hello \" world"); assert (Substring.isEmpty rest))
+    | _ => assert false
+
+  fun literal () =
+    case P.value emptyStrm (full "'hello world'") of
+      (Str s, rest) => (assert (s = "hello world"); assert (Substring.isEmpty rest))
+    | _ => assert false
+
+  structure Multiline =
+  struct
+    fun literal () =
+      case P.value emptyStrm (full "'''hello\n world\n'''") of
+        (Str s, rest) => (assert (s = "hello\n world\n"); assert (Substring.isEmpty rest))
+      | _ => assert false
+
+    fun literalWith5QuotesAtEnd () =
+      case P.value emptyStrm (full "'''hello\n world\n'''''") of
+        (Str s, rest) => (assert (s = "hello\n world\n''"); assert (Substring.isEmpty rest))
+      | _ => assert false
+
+    fun literalWith4QuotesAtEnd () =
+      case P.value emptyStrm (full "'''hello\n world\n''''") of
+        (Str s, rest) => (assert (s = "hello\n world\n'"); assert (Substring.isEmpty rest))
+      | _ => assert false
+
+    fun literalWith6QuotesAtEnd () =
+      case P.value emptyStrm (full "'''hello\n world\n''''''") of
+        (Str s, rest) => (assert (s = "hello\n world\n"); assert (Substring.string rest = "'''"))
+      | _ => assert false
+
+    fun surround s =
+      "\"\"\"" ^ s ^ "\"\"\""
+
+    fun basic () =
+      case P.value emptyStrm (full (surround "hello\n world\n")) of
+        (Str s, rest) => (assert (s = "hello\n world\n"); assert (Substring.isEmpty rest))
+      | _ => assert false
+
+    fun basicWithUnescapedQuotes () =
+      case P.value emptyStrm (full (surround "hello\n \"\" world\n")) of
+        (Str s, rest) => (assert (s = "hello\n \"\" world\n"); assert (Substring.isEmpty rest))
+      | _ => assert false
+
+    fun basicWithThreeQuotesSeparatedBySpace () =
+      case P.value emptyStrm (full (surround "hello\n \"\"\n\" world\n")) of
+        (Str s, rest) => (assert (s = "hello\n \"\"\n\" world\n"); assert (Substring.isEmpty rest))
+      | _ => assert false
+  end
+
+
+  val _ = printSummary
+  [ basic
+  , basicWithEscape
+  , basicWithQuoteEscape
+  , literal
+  , Multiline.literal
+  , Multiline.literalWith5QuotesAtEnd
+  , Multiline.literalWith4QuotesAtEnd
+  , Multiline.literalWith6QuotesAtEnd
+  , Multiline.basic
+  , Multiline.basicWithUnescapedQuotes
+  , Multiline.basicWithThreeQuotesSeparatedBySpace
+  ]
+end
+
 structure FloatTests =
 struct
   fun success v =

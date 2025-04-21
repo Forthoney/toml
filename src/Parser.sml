@@ -27,108 +27,130 @@ struct
       SOME #"#" | NONE => true
     | SOME _ => false
 
-  fun literalString s =
-    let
-      val (pre, suf) = position "'" s
-    in
-      case getc suf of
-        SOME (#"'", rest) => (string pre, rest)
-      | _ => raise Unterminated "'"
-    end
+  structure StringVal =
+  struct
+    fun literal s =
+      let
+        val (pre, suf) = position "'" s
+      in
+        case getc suf of
+          SOME (#"'", rest) => (string pre, rest)
+        | _ => raise Unterminated "'"
+      end
 
-  fun multilineLiteralString strm s =
-    let
-      val s =
-        case getc s of
-          SOME (#"\n", s) => s
-        | _ => s
+    fun backslashTrim (trimNeeded, s) =
+      let
+        val s = if trimNeeded then dropl Char.isSpace s else s
+        val trimmed = dropr Char.isSpace s
+      in
+        case last trimmed of
+          SOME #"\\" => (true, trimr 1 trimmed)
+        | SOME _ => (false, s)
+        | NONE => (trimNeeded, s)
+      end
 
-      val (pre, suf) =
-        let
-          val (pre, suf) = position "'''" s
-          fun loop (pre', suf) =
-            if isEmpty suf then
-              case TextIO.inputLine strm of
-                SOME s => (loop o position "'''" o full) s
-              | NONE => raise Unterminated "'''"
-            else
-              (string (span (pre, pre')), suf)
-        in
-          loop (pre, suf)
-        end
-    in
-      if isPrefix ("''" ^ "'''") suf then (pre ^ "''", triml 5 suf)
-      else if isPrefix ("'" ^ "'''") suf then (pre ^ "'", triml 4 suf)
-      else if isPrefix "'''" suf then (pre, triml 3 suf)
-      else raise Fail "Unreachable"
-    end
+    fun multilineLiteral strm s =
+      let
+        val s =
+          case getc s of
+            SOME (#"\n", s) => s
+          | _ => s
 
-  fun escapedString strm terminator s =
-    let
-      val (termStart, termRest) = (Opt.valOf o getc o full) terminator
-      val termRest = string termRest
-
-      fun loop (acc, s) =
-        let
-          val (pre, suf) = splitl (fn c => c <> termStart andalso c <> #"\\") s
-          val pre = string pre
-          fun escape (c, rest) =
-            case c of
-              #"n" => ("\n", rest)
-            | #"b" => ("\b", rest)
-            | #"t" => ("\t", rest)
-            | #"f" => ("\f", rest)
-            | #"r" => ("\r", rest)
-            | #"\"" => ("\"", rest)
-            | #"\\" => ("\\", rest)
-            | #"u" => Opt.valOf (Utf8.shortEscape rest)
-            | #"U" => Opt.valOf (Utf8.longEscape rest)
-            | c => raise InvalidEscape (String.str #"\\" ^ String.str c)
-        in
-          case getc suf of
-            NONE =>
-              (case TextIO.inputLine strm of
-                 SOME l => loop (acc ^ pre, full l)
-               | NONE => raise Unterminated terminator)
-          | SOME (#"\\", suf) =>
-              (case getc suf of
-                 SOME v =>
-                   let val (escaped, rest) = escape v
-                   in loop (acc ^ pre ^ escaped, rest)
-                   end
-               | NONE => raise InvalidEscape (String.str #"\\"))
-          | SOME (_, suf) =>
-              if isPrefix termRest suf then
-                (acc ^ pre, triml (String.size termRest) suf)
+        val (pre, suf) =
+          let
+            val (pre, suf) = position "'''" s
+            fun loop (pre', suf) =
+              if isEmpty suf then
+                case TextIO.inputLine strm of
+                  SOME s => (loop o position "'''" o full) s
+                | NONE => raise Unterminated "'''"
               else
-                (* false flag! continue on *)
-                loop (pre, suf)
-        end
-    in
-      loop ("", s)
-    end
+                (string (span (pre, pre')), suf)
+          in
+            loop (pre, suf)
+          end
+      in
+        if isPrefix ("''" ^ "'''") suf then (pre ^ "''", triml 5 suf)
+        else if isPrefix ("'" ^ "'''") suf then (pre ^ "'", triml 4 suf)
+        else if isPrefix "'''" suf then (pre, triml 3 suf)
+        else raise Fail "Unreachable"
+      end
 
-  val basicString = escapedString (TextIO.openString "") "\""
+    fun escapedString (trimmer, strm, terminator) s =
+      let
+        val (termStart, termRest) = (Opt.valOf o getc o full) terminator
+        val termRest = string termRest
+        val (trimNeeded, s) = trimmer (false, s)
 
-  fun multilineBasicString strm s =
-    let
-      val s =
-        case getc s of
-          SOME (#"\n", s) => s
-        | _ => s
-      fun maximalString (pre, suf) =
-        if isPrefix "\"" suf then (pre ^ "\"", triml 1 suf)
-        else if isPrefix "\"\"" suf then (pre ^ "\"\"", triml 2 suf)
-        else (pre, suf)
-    in
-      maximalString (escapedString strm "\"\"\"" s)
-    end
+        fun loop trimNeeded (acc, s) =
+          let
+            val (pre, suf) =
+              splitl (fn c => c <> termStart andalso c <> #"\\") s
+            val pre = string pre
+            fun escape (c, rest) =
+              case c of
+                #"n" => ("\n", rest)
+              | #"b" => ("\b", rest)
+              | #"t" => ("\t", rest)
+              | #"f" => ("\f", rest)
+              | #"r" => ("\r", rest)
+              | #"\"" => ("\"", rest)
+              | #"\\" => ("\\", rest)
+              | #"u" => Opt.valOf (Utf8.shortEscape rest)
+              | #"U" => Opt.valOf (Utf8.longEscape rest)
+              | c => raise InvalidEscape (String.str #"\\" ^ String.str c)
+          in
+            case getc suf of
+              NONE =>
+                (case TextIO.inputLine strm of
+                   NONE => raise Unterminated terminator
+                 | SOME l =>
+                     let val (trimNeeded, l) = trimmer (trimNeeded, full l)
+                     in loop trimNeeded (acc ^ pre, l)
+                     end)
+            | SOME (#"\\", suf) =>
+                (case getc suf of
+                   NONE => raise InvalidEscape (String.str #"\\")
+                 | SOME v =>
+                     let val (escaped, rest) = escape v
+                     in loop trimNeeded (acc ^ pre ^ escaped, rest)
+                     end)
+            | SOME (_, suf) =>
+                if isPrefix termRest suf then
+                  (acc ^ pre, triml (String.size termRest) suf)
+                else
+                  (* false flag! continue on *)
+                  loop trimNeeded (pre, suf)
+          end
+      in
+        loop trimNeeded ("", s)
+      end
+
+    val basic = escapedString (fn v => v, TextIO.openString "", "\"")
+
+    fun multilineBasic strm s =
+      let
+        val s =
+          case getc s of
+            SOME (#"\n", s) => s
+          | _ => s
+
+        fun maximal (pre, suf) =
+          if isPrefix "\"" suf then (pre ^ "\"", triml 1 suf)
+          else if isPrefix "\"\"" suf then (pre ^ "\"\"", triml 2 suf)
+          else (pre, suf)
+      in
+        maximal (escapedString (backslashTrim, strm, "\"\"\"") s)
+      end
+  end
+
 
   fun key line =
     let
       fun bareKey s =
         let
-          fun isValid c = Char.isAlphaNum c orelse c = #"-" orelse c = #"_"
+          fun isValid c =
+            Char.isAlphaNum c orelse c = #"-" orelse c = #"_"
           val (pre, suf) = splitl isValid s
         in
           if isEmpty pre then
@@ -141,8 +163,8 @@ struct
 
       fun getKey s =
         case getc s of
-          SOME (#"'", inner) => literalString inner
-        | SOME (#"\"", inner) => basicString inner
+          SOME (#"'", inner) => StringVal.literal inner
+        | SOME (#"\"", inner) => StringVal.basic inner
         | SOME _ => bareKey s
         | NONE => raise Fail "Expected key but found nothing"
 
@@ -198,13 +220,13 @@ struct
             SOME (Str v, rem)
         in
           if isPrefix "'''" s then
-            (wrap o multilineLiteralString strm o triml 3) s
+            (wrap o StringVal.multilineLiteral strm o triml 3) s
           else if isPrefix "\"\"\"" s then
-            (wrap o multilineBasicString strm o triml 3) s
+            (wrap o StringVal.multilineBasic strm o triml 3) s
           else if isPrefix "'" s then
-            (wrap o literalString o triml 1) s
+            (wrap o StringVal.literal o triml 1) s
           else if isPrefix "\"" s then
-            (wrap o basicString o triml 1) s
+            (wrap o StringVal.basic o triml 1) s
           else
             NONE
         end
