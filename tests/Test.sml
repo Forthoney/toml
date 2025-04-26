@@ -1,53 +1,54 @@
-open Asura
+open Asura.Assert
 
 structure P = Parser
 
 val emptyStrm = TextIO.openString ""
 val full = Substring.full
 
-structure StringTests =
+structure StringTests: ASURA_SUITE =
 struct
+  val desc = "Parsing string values"
 
   fun basic () =
     case P.value emptyStrm (full "\"hello world\"") of
-      (Str s, rest) => (assert (s = "hello world"); assert (Substring.isEmpty rest))
+      (Str s, rest) => (eqStr ("hello world", s); isEmptySubstr rest)
     | _ => assert false
 
   fun basicWithEscape () =
     case P.value emptyStrm (full "\"\\thello world\"") of
-      (Str s, rest) => (assert (s = "\thello world"); assert (Substring.isEmpty rest))
+      (Str s, rest) => (eqStr ("\thello world", s); isEmptySubstr rest)
     | _ => assert false
 
   fun basicWithQuoteEscape () =
     case P.value emptyStrm (full "\"hello \\\" world\"") of
-      (Str s, rest) => (assert (s = "hello \" world"); assert (Substring.isEmpty rest))
+      (Str s, rest) => (eqStr ("hello \" world", s); isEmptySubstr rest)
     | _ => assert false
 
   fun literal () =
     case P.value emptyStrm (full "'hello world'") of
-      (Str s, rest) => (assert (s = "hello world"); assert (Substring.isEmpty rest))
+      (Str s, rest) => (eqStr ("hello world", s); isEmptySubstr rest)
     | _ => assert false
 
   structure Multiline =
   struct
     fun literal () =
       case P.value emptyStrm (full "'''hello\n world\n'''") of
-        (Str s, rest) => (assert (s = "hello\n world\n"); assert (Substring.isEmpty rest))
+        (Str s, rest) => (eqStr ("hello\n world\n", s); isEmptySubstr rest)
       | _ => assert false
 
     fun literalWith5QuotesAtEnd () =
       case P.value emptyStrm (full "'''hello\n world\n'''''") of
-        (Str s, rest) => (assert (s = "hello\n world\n''"); assert (Substring.isEmpty rest))
+        (Str s, rest) => (eqStr ("hello\n world\n''", s); isEmptySubstr rest)
       | _ => assert false
 
     fun literalWith4QuotesAtEnd () =
       case P.value emptyStrm (full "'''hello\n world\n''''") of
-        (Str s, rest) => (assert (s = "hello\n world\n'"); assert (Substring.isEmpty rest))
+        (Str s, rest) => (eqStr ("hello\n world\n'", s); isEmptySubstr rest)
       | _ => assert false
 
     fun literalWith6QuotesAtEnd () =
       case P.value emptyStrm (full "'''hello\n world\n''''''") of
-        (Str s, rest) => (assert (s = "hello\n world\n"); assert (Substring.string rest = "'''"))
+        (Str s, rest) => (eqStr ("hello\n world\n", s); isEmptySubstr rest)
       | _ => assert false
 
     fun surround s =
@@ -55,22 +56,22 @@ struct
 
     fun basic () =
       case P.value emptyStrm (full (surround "hello\n world\n")) of
-        (Str s, rest) => (assert (s = "hello\n world\n"); assert (Substring.isEmpty rest))
+        (Str s, rest) => (eqStr ("hello\n world\n", s); isEmptySubstr rest)
       | _ => assert false
 
     fun basicWithUnescapedQuotes () =
       case P.value emptyStrm (full (surround "hello\n \"\" world\n")) of
-        (Str s, rest) => (assert (s = "hello\n \"\" world\n"); assert (Substring.isEmpty rest))
+        (Str s, rest) => (eqStr ("hello\n \"\" world\n", s); isEmptySubstr rest)
       | _ => assert false
 
     fun basicWithThreeQuotesSeparatedBySpace () =
       case P.value emptyStrm (full (surround "hello\n \"\"\n\" world\n")) of
-        (Str s, rest) => (assert (s = "hello\n \"\"\n\" world\n"); assert (Substring.isEmpty rest))
+        (Str s, rest) => (eqStr ("hello\n \"\"\n\" world\n", s); isEmptySubstr rest)
       | _ => assert false
   end
 
 
-  val _ = printSummary
+  val tests = 
   [ basic
   , basicWithEscape
   , basicWithQuoteEscape
@@ -85,8 +86,12 @@ struct
   ]
 end
 
-structure FloatTests =
+structure T = AsuraAutoRunner(StringTests)
+
+structure FloatTests: ASURA_SUITE =
 struct
+  val desc = "Parsing float values"
+
   fun success v =
     case P.value emptyStrm (full v) of
       (Float _, rest) => assert (Substring.isEmpty rest)
@@ -140,7 +145,7 @@ struct
   fun exponentPrecededDotReject () = failure "3.e20"
 
 
-  val _ = printSummary
+  val tests = 
     [ decimalPositive
     , decimalNegative
     , decimalTildeReject
@@ -155,3 +160,5 @@ struct
     , exponentPrecededDotReject
     ]
 end
+
+structure T = AsuraAutoRunner(FloatTests)
