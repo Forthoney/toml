@@ -45,50 +45,37 @@ struct
             SOME (#"\n", s) => s
           | _ => s
 
+        fun loop acc (inner, after) =
+          if isEmpty after then
+            case Option.compose (full, TextIO.inputLine) strm of
+              SOME s => loop (inner :: acc) (position "'''" s)
+            | NONE => raise Unterminated "'''"
+          else
+            (inner :: acc, after)
+
         val (inner, after) =
           let
-            fun loop acc (inner, after) =
-              if isEmpty after then
-                case Option.compose (full, TextIO.inputLine) strm of
-                  SOME s => loop (inner::acc) (position "'''" s)
-                | NONE => raise Unterminated "'''"
-              else
-                (concat (rev (inner::acc)), after)
+            val (inner, after) = loop [] (position "'''" s)
+            val (quotes, after') = splitl (fn c => c = #"'") after
           in
-            loop [] (position "'''" s)
+            if size quotes < 6 then (trimr 3 quotes :: inner, after')
+            else (inner, triml 3 after)
           end
       in
-        if isPrefix ("''" ^ "'''") after then (inner ^ "''", triml 5 after)
-        else if isPrefix ("'" ^ "'''") after then (inner ^ "'", triml 4 after)
-        else if isPrefix "'''" after then (inner, triml 3 after)
-        else raise Fail "Unreachable"
+        (concat (rev inner), after)
       end
 
     fun escapedString (strm, multiline) s =
       let
-        val termRest = if multiline then "\"\"" else ""
-        val terminator = termRest ^ "\""
-        fun chompUntil (c, rest) =
-          let
-            fun loop line =
-              let
-                val chomped = dropl Char.isSpace line
-              in
-                if isEmpty chomped then
-                  case Option.compose (full, TextIO.inputLine) strm of
-                    NONE => raise Unterminated terminator
-                  | SOME line => loop line
-                else
-                  ("", chomped)
-              end
-          in
-            if Char.isSpace c andalso isEmpty (dropl Char.isSpace rest) then
-              loop rest
-            else
-              raise InvalidEscape (String.str #"\\" ^ String.str c)
-          end
+        val terminator = if multiline then "\"\"\"" else "\""
 
-        val handleBackslash = if multiline then chompUntil else (fn (c, _) => raise InvalidEscape (String.str #"\\" ^ String.str c))
+        fun chomp s =
+          if isEmpty s then
+            case Option.compose (full, TextIO.inputLine) strm of
+              NONE => raise Unterminated terminator
+            | SOME line => chomp (dropl Char.isSpace line)
+          else
+            s
 
         fun escape (c, rest) =
           case c of
@@ -101,39 +88,47 @@ struct
           | #"\\" => ("\\", rest)
           | #"u" => Opt.valOf (Utf8.shortEscape rest)
           | #"U" => Opt.valOf (Utf8.longEscape rest)
-          | _ => handleBackslash (c, rest)
+          | c => raise InvalidEscape (String.str #"\\" ^ String.str c)
 
-        fun loop (acc, s) =
+        fun loop acc s =
           let
-            val (pre, suf) = splitl (fn c => c <> #"\"" andalso c <> #"\\") s
-            val pre = string pre
+            val (inner, after) =
+              splitl (fn c => c <> #"\"" andalso c <> #"\\") s
+            val acc = inner :: acc
           in
-            case getc suf of
+            case getc after of
               NONE =>
                 (case Option.compose (full, TextIO.inputLine) strm of
-                   NONE => raise Unterminated terminator
-                 | SOME l => loop (acc ^ pre, l))
-            | SOME (#"\\", suf) =>
-                let
-                  val (escaped, rest) =
-                    case getc suf of
-                      NONE => raise InvalidEscape (String.str #"\\")
-                    | SOME v => escape v
-                in
-                  loop (acc ^ pre ^ escaped, rest)
-                end
-            | SOME (_, suf) =>
-                if isPrefix termRest suf then
-                  (acc ^ pre, triml (String.size termRest) suf)
+                   SOME s => loop acc s
+                 | NONE => raise Unterminated terminator)
+            | SOME (#"\\", after) =>
+                if isEmpty (dropl Char.isSpace after) then
+                  loop acc (chomp (full ""))
                 else
-                  (* false flag! continue on *)
-                  loop (pre, suf)
+                  let
+                    val (escaped, after) =
+                      case getc after of
+                        NONE => raise InvalidEscape (String.str #"\\")
+                      | SOME v => escape v
+                  in
+                    loop (full escaped :: acc) after
+                  end
+            | SOME (quot, after') =>
+                if isPrefix terminator after then
+                  (acc, after)
+                else
+                  loop (full (String.str quot) :: acc) after'
           end
       in
-        loop ("", s)
+        loop [] s
       end
 
-    val basic = escapedString (TextIO.openString "", false)
+    fun basic s =
+      let
+        val (inner, after) = escapedString (TextIO.openString "", false) s
+      in
+        (concat (rev inner), trimr 1 after)
+      end
 
     fun multilineBasic strm s =
       let
@@ -142,12 +137,16 @@ struct
             SOME (#"\n", s) => s
           | _ => s
 
-        fun maximal (pre, suf) =
-          if isPrefix "\"" suf then (pre ^ "\"", triml 1 suf)
-          else if isPrefix "\"\"" suf then (pre ^ "\"\"", triml 2 suf)
-          else (pre, suf)
+        val (inner, after) =
+          let
+            val (inner, after) = escapedString (strm, true) s
+            val (quotes, after') = splitl (fn c => c = #"\"") after
+          in
+            if size quotes < 6 then (trimr 3 quotes :: inner, after')
+            else (inner, triml 3 after)
+          end
       in
-        maximal (escapedString (strm, true) s)
+        (concat (rev inner), after)
       end
   end
 
