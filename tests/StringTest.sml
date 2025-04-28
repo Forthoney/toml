@@ -29,6 +29,9 @@ struct
   fun literal () =
     helper "'hello world'" (eqStr "hello world", isEmptySubstr)
 
+  fun longBasic () =
+    helper "\"hello world\"hello" (eqStr "hello world", fn s => eqSubstr' ("hello", s))
+
   structure Multiline =
   struct
     fun literal () =
