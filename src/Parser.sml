@@ -127,7 +127,7 @@ struct
       let
         val (inner, after) = escapedString (TextIO.openString "", false) s
       in
-        (concat (rev inner), trimr 1 after)
+        (concat (rev inner), triml 1 after)
       end
 
     fun multilineBasic strm s =
