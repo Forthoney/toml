@@ -245,20 +245,15 @@ struct
             | otherwise => otherwise
 
           fun isDigit StringCvt.HEX c =
-                Char.isDigit c
-                orelse (Char.ord c >= 97 andalso Char.ord c < 103)
+                Char.isDigit c orelse Char.contains "abcdefABCDEF" c
             | isDigit StringCvt.OCT c =
-                Char.ord c >= 48 andalso Char.ord c < 56
+                Char.contains "01234567" c
             | isDigit StringCvt.BIN c = c = #"0" orelse c = #"1"
             | isDigit StringCvt.DEC c = Char.isDigit c
 
           fun nonDecimalInt radix s =
             case Opt.composePartial (Opt.filter (isDigit radix o #1), getc) s of
               NONE => NONE
-            | SOME (#"0", s) =>
-                (case Opt.composePartial (Opt.filter (isDigit radix), first) s of
-                   SOME _ => NONE
-                 | NONE => SOME (Integer 0, s))
             | SOME _ =>
                 let
                   val (num, s) =

@@ -10,7 +10,7 @@ struct
 
   fun success v =
     case P.value emptyStrm (full v) of
-      (Float _, rest) => assert (Substring.isEmpty rest)
+      (Float _, rest) => isEmptySubstr rest
     | _ => assert false
 
   fun failure v =

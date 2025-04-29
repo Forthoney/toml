@@ -3,7 +3,7 @@ RELEASE := $(BUILD)/toml
 DBG := $(BUILD)/toml.dbg
 TESTER := $(BUILD)/tester
 
-COMMON_FLAGS := -mlb-path-var 'PKGS $(HOME)/.jinmori/pkgs'
+COMMON_FLAGS := -mlb-path-var 'PKGS $(HOME)/.jinmori/pkgs' -default-type intinf
 DBG_FLAGS := -const 'Exn.keepHistory true'
 
 SOURCE := src/*.sml src/*.mlb

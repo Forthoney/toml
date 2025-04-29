@@ -11,8 +11,6 @@ fun helper s (parsedAssert, restAssert) =
     | _ => assert false
   end
 
-fun eqStr expected actual = Asura.Assert.eqStr (expected, actual)
-
 structure StringTest: ASURA_SUITE =
 struct
   val desc = "Parsing string values"
@@ -30,7 +28,7 @@ struct
     helper "'hello world'" (eqStr "hello world", isEmptySubstr)
 
   fun longBasic () =
-    helper "\"hello world\"hello" (eqStr "hello world", fn s => eqSubstr' ("hello", s))
+    helper "\"hello world\"hello" (eqStr "hello world", eqSubstr' "hello")
 
   structure Multiline =
   struct
@@ -45,8 +43,7 @@ struct
       helper "'''hello\n world\n''''" (eqStr "hello\n world\n'", isEmptySubstr)
 
     fun literalWith6QuotesAtEnd () =
-      helper "'''hello\n world\n''''''" (eqStr "hello\n world\n", fn s =>
-        eqSubstr' ("'''", s))
+      helper "'''hello\n world\n''''''" (eqStr "hello\n world\n", eqSubstr' "'''")
 
     fun surround s = "\"\"\"" ^ s ^ "\"\"\""
 
@@ -74,7 +71,7 @@ struct
 
     fun basicWith6QuotesAtEnd () =
       helper (surround "hello world\"\"\"")
-        (eqStr "hello world", fn s => eqSubstr' ("\"\"\"", s))
+        (eqStr "hello world", eqSubstr' "\"\"\"")
   end
 
 

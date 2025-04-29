@@ -4,3 +4,4 @@ $(PKGS)/github.com/Forthoney/asura/src/src.mlb
 
 FloatTest.sml
 StringTest.sml
+IntTest.sml
