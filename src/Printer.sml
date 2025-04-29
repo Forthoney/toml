@@ -70,7 +70,7 @@ struct
   val rec toString =
     fn (Str s) => tag "string" (jsonEscape s)
      | (Integer i) => (tag "integer" o patchSign o Int.toString) i
-     | (Float f) => (tag "float" o patchSign o Real.toString) f
+     | (Float f) => (tag "float" o patchSign o Real.fmt StringCvt.EXACT) f
      | (Boolean b) => tag "bool" (Bool.toString b)
      | (OffsetDateTime dt) => tag "datetime" (Rfc3339.toString dt)
      | (LocalDateTime (day, time)) =>
