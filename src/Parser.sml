@@ -114,20 +114,16 @@ struct
                     loop (full escaped :: acc) after
                   end
             | SOME (quot, after') =>
-                if isPrefix terminator after then
-                  (acc, after)
-                else
-                  loop (full (String.str quot) :: acc) after'
+                if isPrefix terminator after then (acc, after)
+                else loop (full (String.str quot) :: acc) after'
           end
       in
         loop [] s
       end
 
     fun basic s =
-      let
-        val (inner, after) = escapedString (TextIO.openString "", false) s
-      in
-        (concat (rev inner), triml 1 after)
+      let val (inner, after) = escapedString (TextIO.openString "", false) s
+      in (concat (rev inner), triml 1 after)
       end
 
     fun multilineBasic strm s =
@@ -246,8 +242,7 @@ struct
 
           fun isDigit StringCvt.HEX c =
                 Char.isDigit c orelse Char.contains "abcdefABCDEF" c
-            | isDigit StringCvt.OCT c =
-                Char.contains "01234567" c
+            | isDigit StringCvt.OCT c = Char.contains "01234567" c
             | isDigit StringCvt.BIN c = c = #"0" orelse c = #"1"
             | isDigit StringCvt.DEC c = Char.isDigit c
 
@@ -264,24 +259,50 @@ struct
                   | NONE => NONE
                 end
 
-          fun float prev s =
+          fun exponent acc s =
+            let
+              fun digits acc s =
+                case Opt.compose (Opt.filter Char.isDigit, first) s of
+                  NONE => NONE
+                | SOME _ =>
+                    let
+                      val (digits, s) =
+                        StringCvt.splitl Char.isDigit skipUnderscore s
+                    in
+                      SOME (acc ^ digits, s)
+                    end
+            in
+              case getc s of
+                NONE => NONE
+              | SOME (#"+", s) => digits acc s
+              | SOME (#"-", s) => digits (acc ^ "-") s
+              | SOME _ => digits acc s
+            end
+
+          fun float acc s =
             case Opt.composePartial (Opt.filter Char.isDigit, first) s of
               NONE => NONE
             | SOME _ =>
                 let
                   val (frac, s) = StringCvt.splitl Char.isDigit skipUnderscore s
+                  val (acc, s) =
+                    case getc s of
+                      SOME (#"E" | #"e", s) =>
+                      Opt.getOpt (exponent (acc ^ frac ^ "e") s, (acc ^ frac, s))
+                    | _ => (acc ^ frac, s)
                 in
-                  case Real.fromString (prev ^ frac) of
+                  case Real.fromString acc of
                     SOME v => SOME (Float v, s)
                   | NONE => NONE
                 end
 
-          fun exponent prev s =
-            case getc s of
+          fun exponentOnly acc s =
+            case exponent acc s of
               NONE => NONE
-            | SOME (#"+", s) => float prev s
-            | SOME (#"-", s) => float (prev ^ "-") s
-            | SOME _ => float prev s
+            | SOME (v, s) =>
+                (case Real.fromString v of
+                   SOME v => SOME (Float v, s)
+                 | NONE => NONE)
 
           fun body sign s =
             if isPrefix "inf" s then
@@ -300,10 +321,10 @@ struct
                    | (SOME (#"b", s), NONE) => nonDecimalInt StringCvt.BIN s
                    | (SOME (#".", s), SOME false) => float "-0." s
                    | (SOME (#".", s), _) => float "0." s
-                   | (SOME (#"e", s), SOME false) => exponent "-0e" s
-                   | (SOME (#"e", s), _) => exponent "0e" s
-                   | (SOME (#"E", s), SOME false) => exponent "-0E" s
-                   | (SOME (#"E", s), _) => exponent "0E" s
+                   | (SOME (#"e", s), SOME false) => exponentOnly "-0e" s
+                   | (SOME (#"e", s), _) => exponentOnly "0e" s
+                   | (SOME (#"E", s), SOME false) => exponentOnly "-0E" s
+                   | (SOME (#"E", s), _) => exponentOnly "0E" s
                    | _ => SOME (Integer 0, s))
               | SOME _ =>
                   let
@@ -316,8 +337,8 @@ struct
                   in
                     case getc s of
                       SOME (#".", s) => float (digits ^ ".") s
-                    | SOME (#"e", s) => exponent (digits ^ "e") s
-                    | SOME (#"E", s) => exponent (digits ^ "E") s
+                    | SOME (#"e", s) => exponentOnly (digits ^ "e") s
+                    | SOME (#"E", s) => exponentOnly (digits ^ "E") s
                     | _ =>
                         (case Int.fromString digits of
                            SOME i => SOME (Integer i, s)
