@@ -58,6 +58,8 @@ struct
   fun exponentPositive () = success "4e+22"
   fun exponentPositiveTrailingZero () = success "4e+0022"
   fun exponentNegative () = success "4e+0022"
+  fun decimalAndExponent () = success "6.22e08"
+
   fun exponentPrecededDotReject () = failure "3.e20"
 
 

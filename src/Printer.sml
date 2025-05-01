@@ -62,10 +62,8 @@ struct
   fun tag ty v =
     FMT.object [("type", "\"" ^ ty ^ "\""), ("value", "\"" ^ v ^ "\"")]
 
-  fun patchSign s =
-    case Substring.getc (Substring.full s) of
-      SOME (#"~", rest) => "-" ^ Substring.string rest
-    | _ => s
+  val patchSign =
+    String.map (fn #"~" =>  #"-" | c => c) 
 
   val rec toString =
     fn (Str s) => tag "string" (jsonEscape s)
