@@ -76,7 +76,9 @@ struct
         (Rfc3339.Date.toString day ^ "T" ^ Rfc3339.TimeOfDay.toString time)
      | (LocalDate day) => tag "date-local" (Rfc3339.Date.toString day)
      | (LocalTime time) => tag "time-local" (Rfc3339.TimeOfDay.toString time)
+     | (Array []) => "[]"
      | (Array xs) => FMT.array (map toString xs)
+     | (Table []) => "{}"
      | (Table kvs) =>
       FMT.object (map (fn (k, v) => (jsonEscape k, toString v)) kvs)
 end
