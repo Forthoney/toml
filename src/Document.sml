@@ -33,6 +33,8 @@ structure Document :> DOCUMENT where type k = string where type v = value =
 struct
   type k = string
   type v = value
+
+  (* type memo = (k * k list) list *)
   type doc = (k * v) list
 
   val new = []
@@ -51,35 +53,52 @@ struct
       loop []
     end
 
-  fun insertSelf ((prev, myKey, post), tbl) =
-    List.revAppend (prev, (myKey, Table tbl) :: post)
-
   fun traverse f =
     let
-      fun loop acc tbl =
-        fn ((k, []), v) =>
-          let
-            val init =
-              case search k tbl of
-                SOME (prev, v', rest) =>
-                  (case f (v, SOME v') of
-                    SOME v => SOME (List.revAppend (prev, (k, v)::rest))
-                  | NONE => NONE)
-              | NONE =>
-                (case f (v, NONE) of
-                  SOME v => SOME ((k, v) :: tbl)
-                | NONE => NONE)
-          in
-            case init of
-              SOME init => SOME (foldl insertSelf init acc)
-            | NONE => NONE
-          end
-         | ((k0, k1 :: ks), v) =>
-          case search k0 tbl of
-            SOME (prev, Table tbl, rest) =>
-              loop ((prev, k0, rest) :: acc) tbl ((k1, ks), v)
-          | NONE => loop (([], k0, tbl) :: acc) [] ((k1, ks), v)
-          | SOME _ => NONE
+      fun search k =
+        let
+          fun loop acc [] = (acc, NONE, [])
+            | loop acc ((k', v') :: kvs) =
+                if k' = k then (acc, SOME v', kvs)
+                else loop ((k', v') :: acc) kvs
+        in
+          loop []
+        end
+
+      fun insertSelf ((prev, (k, context), post), tbl) =
+        case context of
+          NONE => List.revAppend (prev, (k, Table tbl) :: post)
+        | SOME tbls =>
+            List.revAppend (prev, (k, Array (Table tbl :: tbls)) :: post)
+
+      fun loop acc tbl ((k, ks), v) =
+        let
+          val (prev, v', post) = search k tbl
+        in
+          case ks of
+            [] =>
+              (case f (v, v') of
+                 SOME v =>
+                   let val init = List.revAppend (prev, (k, v) :: post)
+                   in SOME (foldl insertSelf init acc)
+                   end
+               | NONE => NONE)
+          | k' :: ks =>
+              let
+                val next =
+                  case v' of
+                    SOME (Table tbl) => SOME (NONE, tbl)
+                  | SOME (Array (Table tbl :: rest)) => SOME (SOME rest, tbl)
+                  | NONE => SOME (NONE, [])
+                  | SOME _ => NONE
+
+              in
+                case next of
+                  SOME (context, tbl) =>
+                    loop ((prev, (k, context), post) :: acc) tbl ((k', ks), v)
+                | NONE => NONE
+              end
+        end
     in
       loop []
     end
