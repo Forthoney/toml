@@ -1,11 +1,13 @@
 structure Utf8:
 sig
+  exception Utf8
   val hexToWord: char -> Word8.word option
   val unicodify: Word32.word -> string
   val shortEscape: substring -> (string * substring) option
   val longEscape: substring -> (string * substring) option
 end =
 struct
+  exception Utf8
   val << = Word32.<<;
   val >> = Word32.>>;
   val orb = Word32.orb;
@@ -45,8 +47,16 @@ struct
       loop (0w0, 0)
     end
 
+  fun isCodePoint bytes =
+    bytes <= 0wx10FFFF
+
+  fun isScalarValue bytes =
+    isCodePoint bytes andalso (bytes <= 0wxD7FF orelse bytes >= 0wxE000)
+
+
   fun unicodify bytes =
     let
+      val _ = if not (isScalarValue bytes) then raise Utf8 else ()
       (* Set the biggest two bits of a byte as 10 *)
       fun setTop10 b =
         b andb 0wb0011_1111 orb 0wb1000_0000
