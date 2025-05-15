@@ -9,7 +9,7 @@ structure Parser:
 sig
   val key: substring -> key * substring
   val value: TextIO.instream -> substring -> value * substring
-  val keyValuePair: TextIO.instream -> substring -> (key * value)
+  val keyValuePair: TextIO.instream -> substring -> (key * value) * substring
   val parse: TextIO.instream -> Document.doc
 end =
 struct
@@ -145,7 +145,6 @@ struct
         (concat (rev inner), after)
       end
   end
-
 
   fun key line =
     let
@@ -288,7 +287,8 @@ struct
                   val (acc, s) =
                     case getc s of
                       SOME (#"E" | #"e", s) =>
-                      Opt.getOpt (exponent (acc ^ frac ^ "e") s, (acc ^ frac, s))
+                        Opt.getOpt
+                          (exponent (acc ^ frac ^ "e") s, (acc ^ frac, s))
                     | _ => (acc ^ frac, s)
                 in
                   case Real.fromString acc of
@@ -384,11 +384,8 @@ struct
     let
       val (k, line) = key line
       val (v, rest) = value strm (equals line)
-      val rest = dropl Char.isSpace rest
     in
-      case getc rest of
-        SOME (#"#", _) | NONE => (k, v)
-      | SOME _ => raise NotEndOfLine (string rest)
+      ((k, v), rest)
     end
 
   fun header terminator line =
@@ -408,40 +405,50 @@ struct
         Insert of string list
       | Append of (string * string list)
 
-      fun flush dest (Insert []) buffer = Document.concat (dest, buffer)
-        | flush dest (Insert (k :: ks)) buffer =
-            (Opt.valOf (Document.insert dest
-               ((k, ks), Table (Document.toList buffer)))
-             handle Option => raise DuplicateKey)
-        | flush dest (Append (k, ks)) buffer =
-            (Opt.valOf (Document.pushAt dest
-               ((k, ks), Table (Document.toList buffer)))
-             handle Option => raise DuplicateKey)
+      val init = {root = Document.new, doc = Document.new, context = Insert []}
 
-      fun loop topLevel context doc =
-        let
-          fun insert kv =
-            Opt.valOf (Document.insert doc kv)
-            handle Option => raise DuplicateKey
-        in
-          case Opt.compose (dropl Char.isSpace o full, TextIO.inputLine) strm of
-            NONE => flush topLevel context doc
-          | SOME line =>
-              (case getc line of
-                 SOME (#"#", _) | NONE => loop topLevel context doc
-               | SOME (#"[", line) =>
-                   let
-                     val topLevel = flush topLevel context doc
-                     val context =
-                       case getc line of
-                         SOME (#"[", line) => Append (header "]]" line)
-                       | _ => (Insert o op:: o header "]") line
-                   in
-                     loop topLevel context Document.new
-                   end
-               | _ => (loop topLevel context o insert o keyValuePair strm) line)
-        end
+      fun flush dest buffer =
+        fn (Insert []) => Document.concat (dest, buffer)
+         | (Insert (k :: ks)) =>
+          (Opt.valOf (Document.insert dest
+             ((k, ks), Table (Document.toList buffer)))
+           handle Option => raise DuplicateKey)
+         | (Append (k, ks)) =>
+          (Opt.valOf (Document.pushAt dest
+             ((k, ks), Table (Document.toList buffer)))
+           handle Option => raise DuplicateKey)
+
+      fun loop {root, context, doc} =
+        case Opt.compose (dropl Char.isSpace o full, TextIO.inputLine) strm of
+          NONE => flush root doc context
+        | SOME line =>
+            let
+              val next =
+                case getc line of
+                  SOME (#"#", _) | NONE => {root, context, doc}
+                | SOME (#"[", line) =>
+                    { doc = Document.new
+                    , root = flush root doc context
+                    , context =
+                        case getc line of
+                          SOME (#"[", line) => Append (header "]]" line)
+                        | _ => (Insert o op:: o header "]") line
+                    }
+                | _ =>
+                    let
+                      val (kv, rest) = keyValuePair strm line
+                      val rest = dropl Char.isSpace rest
+                      val doc = Opt.valOf (Document.insert doc kv)
+                    in
+                      case getc rest of
+                        NONE => {root, context, doc}
+                      | SOME (#"#", _) => {root, context, doc}
+                      | SOME _ => raise NotEndOfLine (string rest)
+                    end
+            in
+              loop next
+            end
     in
-      loop Document.new (Insert []) Document.new
+      loop init
     end
 end

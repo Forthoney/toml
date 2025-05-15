@@ -3,6 +3,7 @@ $(SML_LIB)/basis/basis.mlb
 ann
 	"allowOrPats true"
 	"allowExtendedNumConsts true"
+	"allowRecordPunExps true"
 in
 	DateTime.sml
 	Unicode.sml
