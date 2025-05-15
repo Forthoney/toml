@@ -4,6 +4,7 @@ exception Unterminated of string
 exception InvalidEscape of string
 exception DuplicateKey
 exception NotEndOfLine of string
+exception Header of string
 
 structure Parser:
 sig
@@ -19,13 +20,11 @@ struct
 
   val triDoubleQuote = "\"\"\""
 
-  fun last s =
-    Opt.compose (fn s => sub (s, size s - 1), Opt.filter (not o isEmpty)) s
-
-  fun isBlank line =
-    case first (dropl Char.isSpace line) of
-      SOME #"#" | NONE => true
-    | SOME _ => false
+  fun eol s =
+    case getc s of
+      NONE => NONE
+    | SOME (#"#", s) => NONE
+    | s => s
 
   structure StringVal =
   struct
@@ -374,29 +373,32 @@ struct
         SOME v => v
       | NONE => raise Fail "Unknown value type"
     end
-
-  fun equals s =
-    case getc (dropl Char.isSpace s) of
-      SOME (#"=", rest) => dropl Char.isSpace rest
-    | _ => raise Fail "Expected to find '=' after key"
-
-  fun keyValuePair strm line =
+  and keyValuePair strm line =
     let
       val (k, line) = key line
-      val (v, rest) = value strm (equals line)
+      val line = 
+        case getc (dropl Char.isSpace line) of
+          SOME (#"=", rest) => dropl Char.isSpace rest
+        | _ => raise Fail "Expected to find '=' after key"
+      val (v, rest) = value strm line
     in
       ((k, v), rest)
     end
 
   fun header terminator line =
     let
-      val ((k, ks), line) = key (dropl Char.isSpace line)
+      val (keys, line) = key (dropl Char.isSpace line)
     in
-      if
-        isPrefix terminator line
-        andalso isBlank (triml (String.size terminator) line)
-      then (k, ks)
-      else raise Unterminated terminator
+      if isPrefix terminator line then
+        let
+          val line = triml (String.size terminator) line
+        in
+          case eol (dropl Char.isSpace line) of
+            NONE => keys
+          | SOME _ => raise Header (string line)
+        end
+      else
+        raise Unterminated terminator
     end
 
   fun parse strm =
@@ -422,32 +424,27 @@ struct
         case Opt.compose (dropl Char.isSpace o full, TextIO.inputLine) strm of
           NONE => flush root doc context
         | SOME line =>
-            let
-              val next =
-                case getc line of
-                  SOME (#"#", _) | NONE => {root, context, doc}
-                | SOME (#"[", line) =>
-                    { doc = Document.new
-                    , root = flush root doc context
-                    , context =
-                        case getc line of
-                          SOME (#"[", line) => Append (header "]]" line)
-                        | _ => (Insert o op:: o header "]") line
-                    }
-                | _ =>
-                    let
-                      val (kv, rest) = keyValuePair strm line
-                      val rest = dropl Char.isSpace rest
-                      val doc = Opt.valOf (Document.insert doc kv)
-                    in
-                      case getc rest of
-                        NONE => {root, context, doc}
-                      | SOME (#"#", _) => {root, context, doc}
-                      | SOME _ => raise NotEndOfLine (string rest)
-                    end
-            in
-              loop next
-            end
+            loop
+              (case eol line of
+                 NONE => {root, context, doc}
+               | SOME (#"[", line) =>
+                   { doc = Document.new
+                   , root = flush root doc context
+                   , context =
+                       case getc line of
+                         SOME (#"[", line) => Append (header "]]" line)
+                       | _ => (Insert o op:: o header "]") line
+                   }
+               | _ =>
+                   let
+                     val (kv, rest) = keyValuePair strm line
+                     val rest = dropl Char.isSpace rest
+                     val doc = Opt.valOf (Document.insert doc kv)
+                   in
+                     case eol rest of
+                       NONE => {root, context, doc}
+                     | SOME _ => raise NotEndOfLine (string rest)
+                   end)
     in
       loop init
     end
