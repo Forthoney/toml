@@ -16,13 +16,16 @@ struct
   fun failure v =
     raisesAny (fn () => (ignore o P.value emptyStrm o full) v)
 
-  fun decimal () = success "3.14"
+  structure Decimal =
+  struct
+    fun basic () = success "3.14"
 
-  fun decimalPositive () = success "+3.14"
+    fun positive () = success "+3.14"
 
-  fun decimalNegative () = success "-3.14"
+    fun negative () = success "-3.14"
 
-  fun decimalTildeReject () = failure "~3.14"
+    fun tildeReject () = failure "~3.14"
+  end
 
   fun inf () =
     case P.value emptyStrm (full "inf") of
@@ -53,29 +56,36 @@ struct
 
   fun infTildeReject () = failure "~inf"
 
-  fun exponent () = success "3e2"
-  fun exponentTrailingZero () = success "3e002"
-  fun exponentPositive () = success "4e+22"
-  fun exponentPositiveTrailingZero () = success "4e+0022"
-  fun exponentNegative () = success "4e+0022"
-  fun decimalAndExponent () = success "6.22e08"
+  structure Exponent =
+  struct
+    fun basic () = success "3e2"
+    fun trailingZero () = success "3e002"
+    fun positive () = success "4e+22"
+    fun positiveTrailingZero () = success "4e+0022"
+    fun negative () = success "4e+0022"
+    fun decimalAndExponent () = success "6.22e08"
 
-  fun exponentPrecededDotReject () = failure "3.e20"
+    fun precededDotReject () = failure "3.e20"
+    fun supercededUnderscoreReject () = failure "3e_20"
+  end
 
 
   val tests = 
-    [ decimalPositive
-    , decimalNegative
-    , decimalTildeReject
+    [ Decimal.basic
+    , Decimal.positive
+    , Decimal.negative
+    , Decimal.tildeReject
     , inf
     , infNegative
     , infTildeReject
-    , exponent
-    , exponentTrailingZero
-    , exponentPositive
-    , exponentPositiveTrailingZero
-    , exponentNegative
-    , exponentPrecededDotReject
+    , Exponent.basic
+    , Exponent.trailingZero
+    , Exponent.positive
+    , Exponent.positiveTrailingZero
+    , Exponent.negative
+    , Exponent.decimalAndExponent
+    , Exponent.precededDotReject
+    , Exponent.supercededUnderscoreReject
     ]
 end
 
