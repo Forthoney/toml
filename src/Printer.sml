@@ -62,8 +62,7 @@ struct
   fun tag ty v =
     FMT.object [("type", "\"" ^ ty ^ "\""), ("value", "\"" ^ v ^ "\"")]
 
-  val patchSign =
-    String.map (fn #"~" =>  #"-" | c => c) 
+  val patchSign = String.map (fn #"~" => #"-" | c => c)
 
   val rec toString =
     fn (Str s) => tag "string" (jsonEscape s)
