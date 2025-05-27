@@ -219,7 +219,8 @@ struct
                 in
                   case getc s of
                     SOME (#",", s) => array acc s
-                  | _ => array acc s
+                  | SOME (#"]", s) => SOME (Array acc, s)
+                  | _ => NONE
                 end
             end
 
