@@ -288,7 +288,7 @@ struct
           fun exponent acc s =
             let
               fun digits acc s =
-                case Opt.compose (Opt.filter Char.isDigit, first) s of
+                case Opt.composePartial (Opt.filter Char.isDigit, first) s of
                   NONE => NONE
                 | SOME _ =>
                     let
