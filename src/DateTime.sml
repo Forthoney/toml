@@ -127,8 +127,8 @@ struct
       handle Format | Month _ => NONE
   end
 
-  val timeHour = digits 2 {min = 0, max = 23}
-  val timeMinute = digits 2 {min = 0, max = 59}
+  val timeHour = digits 2 {min = 0, max = 24}
+  val timeMinute = digits 2 {min = 0, max = 60}
 
   structure TimeOfDay: SERIALIZABLE =
   struct
@@ -140,7 +140,7 @@ struct
         val s = consume [#":"] s
         val (minute, s) = timeMinute s
         val s = consume [#":"] s
-        val (second, s) = digits 2 {min = 0, max = 59} s
+        val (second, s) = digits 2 {min = 0, max = 60} s
         val (secfrac, s) =
           case getc s of
             SOME (#".", s) =>

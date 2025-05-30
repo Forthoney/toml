@@ -24,4 +24,3 @@ val _ =
          ^ (String.toString o #1 o Substring.base) at)
   | InvalidEscape s => printErr ("Invalid escape string: " ^ s)
   | DuplicateKey => printErr ("Duplicate key: ")
-  | NotEndOfLine s => printErr ("Expected end of line but found " ^ s)

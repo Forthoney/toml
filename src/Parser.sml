@@ -3,7 +3,6 @@ type key = (string * string list)
 exception Expected of {target: string, at: substring}
 exception InvalidEscape of string
 exception DuplicateKey
-exception NotEndOfLine of string
 exception Header of string
 
 structure Parser:
@@ -480,7 +479,7 @@ struct
                    in
                      case eol rest of
                        NONE => {root, context, doc}
-                     | SOME _ => raise NotEndOfLine (string rest)
+                     | SOME _ => raise Expected {target="", at=rest}
                    end)
     in
       loop init
