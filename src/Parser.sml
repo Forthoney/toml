@@ -9,7 +9,7 @@ structure Parser:
 sig
   val key: substring -> key * substring
   val value: TextIO.instream -> substring -> value * substring
-  val keyValuePair: TextIO.instream -> substring -> (key * value) * substring
+  val keyVal: TextIO.instream -> substring -> (key * value) * substring
   val parse: TextIO.instream -> Document.doc
 end =
 struct
@@ -230,7 +230,7 @@ struct
                 SOME (#"}", s) => (Table (Document.toList acc), s)
               | _ =>
                 let
-                  val (kv, s) = keyValuePair strm s
+                  val (kv, s) = keyVal strm s
                   val acc = Opt.valOf (Document.insert acc kv)
                   val s = dropl wsChar s
                 in
@@ -409,7 +409,7 @@ struct
             ("Unknown value type: " ^ String.toString (Substring.string line)
              ^ " at " ^ (String.toString o #1 o base) line)
     end
-  and keyValuePair strm line =
+  and keyVal strm line =
     let
       val (k, line) = key line
       val line =
@@ -473,7 +473,7 @@ struct
                    }
                | _ =>
                    let
-                     val (kv, rest) = keyValuePair strm line
+                     val (kv, rest) = keyVal strm line
                      val rest = dropl Char.isSpace rest
                      val doc = Opt.valOf (Document.insert doc kv)
                    in
