@@ -1,6 +1,6 @@
 type key = (string * string list)
 
-exception Unterminated of string
+exception Expected of {target: string, at: substring}
 exception InvalidEscape of string
 exception DuplicateKey
 exception NotEndOfLine of string
@@ -18,7 +18,7 @@ struct
 
   open Substring
 
-  val triDoubleQuote = "\"\"\""
+  fun wsChar c = c = #" " orelse c = #"\t"
 
   fun eol s =
     case getc s of
@@ -34,7 +34,7 @@ struct
       in
         case getc after of
           SOME (#"'", rest) => (string inner, rest)
-        | _ => raise Unterminated "'"
+        | _ => raise Expected {target = "'", at = after}
       end
 
     fun multilineLiteral strm s =
@@ -48,7 +48,7 @@ struct
           if isEmpty after then
             case Option.compose (full, TextIO.inputLine) strm of
               SOME s => loop (inner :: acc) (position "'''" s)
-            | NONE => raise Unterminated "'''"
+            | NONE => raise Expected {target = "'''", at = after}
           else
             (inner :: acc, after)
 
@@ -71,7 +71,7 @@ struct
         fun chomp s =
           if isEmpty s then
             case Option.compose (full, TextIO.inputLine) strm of
-              NONE => raise Unterminated terminator
+              NONE => raise Expected {target = terminator, at = s}
             | SOME line => chomp (dropl Char.isSpace line)
           else
             s
@@ -99,7 +99,7 @@ struct
               NONE =>
                 (case Option.compose (full, TextIO.inputLine) strm of
                    SOME s => loop acc s
-                 | NONE => raise Unterminated terminator)
+                 | NONE => raise Expected {target = terminator, at = after})
             | SOME (#"\\", after) =>
                 if isEmpty (dropl Char.isSpace after) then
                   loop acc (chomp (full ""))
@@ -155,8 +155,10 @@ struct
         in
           if isEmpty pre then
             raise Fail
-              ("Bare key (key without quotes) must consist of ASCII alphanumeric, dashes, or underscores at"
-               ^ "`" ^ (string s) ^ "`")
+              ("Unquoted key " ^ String.toString (string s)
+               ^
+               " must consist of ASCII alphanumeric, dashes, or underscores at "
+               ^ #1 (base s))
           else
             (string pre, suf)
         end
@@ -170,11 +172,11 @@ struct
 
       fun loop acc s =
         let
-          val s = dropl Char.isSpace s
+          val s = dropl wsChar s
         in
           case getc s of
             SOME (#".", rest) =>
-              let val (k, rest) = getKey (dropl Char.isSpace rest)
+              let val (k, rest) = getKey (dropl wsChar rest)
               in loop (k :: acc) rest
               end
           | _ => (acc, s)
@@ -188,31 +190,57 @@ struct
 
   fun value strm line =
     let
-      fun array s =
-        case getc s of
-          SOME (#"[", s) =>
+      fun container s =
+        let
+          fun wsCommentNewline s =
             let
-              fun loop acc s =
-                let
-                  val (v, s) = value strm s
-                  val acc = v :: acc
-                in
-                  case getc (dropl Char.isSpace s) of
-                    SOME (#"]", s) => SOME (Array acc, s)
-                  | SOME (#",", s) =>
-                      let
-                        val s = (dropl Char.isSpace s)
-                      in
-                        case getc s of
-                          SOME (#"]", s) => SOME (Array acc, s)
-                        | _ => loop acc s
-                      end
-                  | _ => NONE
-                end
+              val s' = dropl wsChar s
             in
-              loop [] (dropl Char.isSpace s)
+              case first s' of
+                SOME #"#" | SOME #"\n" | NONE =>
+                  (case TextIO.inputLine strm of
+                     NONE => full ""
+                   | SOME line => wsCommentNewline (full line))
+              | _ => s'
             end
-        | _ => NONE
+
+          fun array acc s =
+            let
+              val s = wsCommentNewline s
+            in
+              case getc s of
+                SOME (#"]", s) => (Array acc, s)
+              | _ =>
+                  let
+                    val (acc, s) = let val (v, s) = value strm s
+                                   in (v :: acc, wsCommentNewline s)
+                                   end
+                  in
+                    case getc s of
+                      SOME (#",", s) => array acc s
+                    | SOME (#"]", s) => (Array acc, s)
+                    | _ => raise Expected {target = "',' or ']'", at = s}
+                  end
+            end
+
+          fun inlineTable acc s =
+            let
+              val (kv, rest) = keyValuePair strm s
+              val rest = dropl Char.isSpace rest
+              val acc = Opt.valOf (Document.insert acc kv)
+            in
+              case getc rest of
+                SOME (#",", rest) => inlineTable acc (dropl Char.isSpace rest)
+              | SOME (#"}", rest) => (Table (Document.toList acc), rest)
+              | _ => raise Expected {target = "',' or '}'", at = rest}
+            end
+        in
+          case getc s of
+            SOME (#"[", s) => (SOME o array [] o dropl Char.isSpace) s
+          | SOME (#"{", s) =>
+              (SOME o inlineTable Document.new o dropl Char.isSpace) s
+          | _ => NONE
+        end
 
       fun str s =
         let
@@ -260,7 +288,7 @@ struct
           fun exponent acc s =
             let
               fun digits acc s =
-                case Opt.compose (Opt.filter Char.isDigit, first) s of
+                case Opt.composePartial (Opt.filter Char.isDigit, first) s of
                   NONE => NONE
                 | SOME _ =>
                     let
@@ -369,14 +397,17 @@ struct
               SOME v => SOME v
             | NONE => tryMap fs v
     in
-      case tryMap [array, str, bool, date, numeric] line of
+      case tryMap [container, str, bool, date, numeric] line of
         SOME v => v
-      | NONE => raise Fail "Unknown value type"
+      | NONE =>
+          raise Fail
+            ("Unknown value type: " ^ String.toString (Substring.string line)
+             ^ " at " ^ (String.toString o #1 o base) line)
     end
   and keyValuePair strm line =
     let
       val (k, line) = key line
-      val line = 
+      val line =
         case getc (dropl Char.isSpace line) of
           SOME (#"=", rest) => dropl Char.isSpace rest
         | _ => raise Fail "Expected to find '=' after key"
@@ -398,7 +429,7 @@ struct
           | SOME _ => raise Header (string line)
         end
       else
-        raise Unterminated terminator
+        raise Expected {target = terminator, at = line}
     end
 
   fun parse strm =
