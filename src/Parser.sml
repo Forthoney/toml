@@ -225,20 +225,26 @@ struct
 
           fun inlineTable acc s =
             let
-              val (kv, rest) = keyValuePair strm s
-              val rest = dropl Char.isSpace rest
-              val acc = Opt.valOf (Document.insert acc kv)
+              val s = dropl wsChar s
             in
-              case getc rest of
-                SOME (#",", rest) => inlineTable acc (dropl Char.isSpace rest)
-              | SOME (#"}", rest) => (Table (Document.toList acc), rest)
-              | _ => raise Expected {target = "',' or '}'", at = rest}
+              case getc s of
+                SOME (#"}", s) => (Table (Document.toList acc), s)
+              | _ =>
+                let
+                  val (kv, s) = keyValuePair strm s
+                  val acc = Opt.valOf (Document.insert acc kv)
+                  val s = dropl wsChar s
+                in
+                  case getc s of
+                    SOME (#",", s) => inlineTable acc s
+                  | SOME (#"}", s) => (Table (Document.toList acc), s)
+                  | _ => raise Expected {target = "',' or '}'", at = s}
+                end
             end
         in
           case getc s of
-            SOME (#"[", s) => (SOME o array [] o dropl Char.isSpace) s
-          | SOME (#"{", s) =>
-              (SOME o inlineTable Document.new o dropl Char.isSpace) s
+            SOME (#"[", s) => SOME (array [] s)
+          | SOME (#"{", s) => SOME (inlineTable Document.new s)
           | _ => NONE
         end
 
